@@ -606,7 +606,7 @@
     forced = undefined;
     if(anomaly) anomaly.apply(scene);
     camX = 0;
-    renderScene(scene, 0, performance.now());
+    if(phase !== "walking") renderScene(scene, 0, performance.now());   // 歩行演出中は walk() が滑り込みで描く
   }
   function paintHud(){ $("hudRound").textContent = round; $("hudMiss").textContent = miss; }
   function setMsg(text, cls){
@@ -650,28 +650,54 @@
       newScene(); phase = "idle"; setChoices(true);
     });
   }
+  /* 歩行演出: ①歩く(横スクロール+足取りの上下揺れ+画面端が暗くなる)
+     → ②黒い帯が進行方向から画面を拭う(ワイプ) → ③次の通路が反対側から滑り込み、出口番号が一瞬浮かぶ。
+     以前は「少しスクロールして暗転→フェードイン」だけで、特にスマホでは切り替わりが分かりにくかった。 */
   function walk(dirSign, done){
     phase = "walking"; setChoices(false);
-    const t0 = performance.now(), DUR = 750, FADE = 220;
-    let stepAt = 0;
+    const t0 = performance.now(), WALK = 820, WIPE = 300, SLIDE = 420;
+    let stepAt = 0, swapped = false;
+    const ease = u => u < .5 ? 2*u*u : 1 - Math.pow(-2*u+2, 2)/2;
+    function vignette(a){
+      const g = ctx.createRadialGradient(VIEW_W/2, VIEW_H/2, VIEW_H*0.35, VIEW_W/2, VIEW_H/2, VIEW_W*0.75);
+      g.addColorStop(0, "rgba(10,8,20,0)"); g.addColorStop(1, "rgba(10,8,20," + a + ")");
+      ctx.fillStyle = g; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    }
     function frame(now){
-      const t = Math.min(1, (now - t0) / DUR);
-      camX = dirSign * VIEW_W * 0.55 * t * t;
-      renderScene(scene, camX, now);
-      if(now - stepAt > 240){ Sfx.step(); stepAt = now; }
-      const fade = t < 0.75 ? 0 : (t - 0.75) / 0.25;
-      if(fade > 0){ ctx.fillStyle = "rgba(10,8,20," + fade + ")"; ctx.fillRect(0,0,VIEW_W,VIEW_H); }
-      if(t < 1){ rafId = requestAnimationFrame(frame); return; }
-      // 暗転から次シーンをフェードイン
-      done();
-      const f0 = performance.now();
-      function fadeIn(now2){
-        const u = Math.min(1, (now2 - f0) / FADE);
-        renderScene(scene, 0, now2);
-        ctx.fillStyle = "rgba(10,8,20," + (1-u) + ")"; ctx.fillRect(0,0,VIEW_W,VIEW_H);
-        if(u < 1) rafId = requestAnimationFrame(fadeIn); else rafId = null;
+      const el = now - t0;
+      if(el < WALK){
+        const t = el / WALK;
+        camX = dirSign * VIEW_W * 0.7 * t * t;
+        const bob = Math.abs(Math.sin(el / 110)) * 6 * Math.min(1, t*3);
+        ctx.save(); ctx.translate(0, -bob); renderScene(scene, camX, now); ctx.restore();
+        ctx.fillStyle = "#e9d9bd"; ctx.fillRect(0, VIEW_H - bob, VIEW_W, bob);
+        vignette(0.25 + t * 0.55);
+        if(now - stepAt > 220){ Sfx.step(); stepAt = now; }
+      } else if(el < WALK + WIPE){
+        const t = ease((el - WALK) / WIPE);
+        if(!swapped){ swapped = true; done(); if(phase === "ended") { rafId = null; return; } }
+        // 直前の絵を暗く残したまま、黒い帯が進行方向から拭っていく
+        vignette(0.8);
+        const w = VIEW_W * t;
+        ctx.fillStyle = "#0a0814";
+        if(dirSign > 0) ctx.fillRect(VIEW_W - w, 0, w, VIEW_H); else ctx.fillRect(0, 0, w, VIEW_H);
+      } else if(el < WALK + WIPE + SLIDE){
+        const t = ease((el - WALK - WIPE) / SLIDE);
+        ctx.fillStyle = "#0a0814"; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+        const off = dirSign * VIEW_W * (1 - t);
+        ctx.save(); ctx.beginPath(); ctx.rect(off, 0, VIEW_W, VIEW_H); ctx.clip();   // パララックス層のはみ出しを黒帯の外に描かない
+        ctx.translate(off, 0); renderScene(scene, 0, now); ctx.restore();
+        vignette((1 - t) * 0.6);
+        // 到着した出口の番号を一瞬大きく浮かべる
+        const a = t < 0.5 ? t*2 : (1 - t) * 2;
+        ctx.fillStyle = "rgba(255,233,184," + (a*0.9) + ")";
+        ctx.font = "bold 64px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("出口 " + scene.exitSign.n, VIEW_W/2, VIEW_H*0.42);
+      } else {
+        renderScene(scene, 0, now); rafId = null; return;
       }
-      if(phase !== "ended") rafId = requestAnimationFrame(fadeIn);
+      rafId = requestAnimationFrame(frame);
     }
     rafId = requestAnimationFrame(frame);
   }
