@@ -79,6 +79,8 @@
   .choice.go{background:linear-gradient(90deg,var(--accent2),var(--accent));color:#2a1608;border:none;
     box-shadow:0 0 20px rgba(255,143,179,.35);}
   .choice[disabled]{opacity:.45;pointer-events:none;}
+  .choice[hidden]{display:none;}
+  #msg.intro{color:var(--accent);font-weight:700;}
 
   /* ===== 結果 ===== */
   #result{justify-content:center;padding:24px;text-align:center;}
@@ -102,7 +104,8 @@
       いつもと<b>違うところ（異変）</b>があれば <b>◀ 引き返す</b>、<br>
       なにも無ければ <b>進む ▶</b>。<br>
       正解を重ねて <b>出口8</b> にたどり着けば脱出。<br>
-      間違えると出口0からやり直し。
+      間違えると出口0からやり直し。<br>
+      最初に<b>「いつもの通路」</b>を見せるので、よく覚えておこう。
     </div>
     <button class="btn" id="startBtn">はじめる</button>
     <div id="bestLabel"></div>
@@ -122,6 +125,7 @@
       <div id="choiceRow">
         <button class="choice back" id="backBtn">◀ 引き返す</button>
         <button class="choice go" id="goBtn">進む ▶</button>
+        <button class="choice go" id="memoBtn" hidden>覚えた！ 歩きはじめる ▶</button>
       </div>
     </div>
   </section>
@@ -592,7 +596,7 @@
 
   let round = 0, miss = 0, startedAt = 0;
   let scene = null, anomaly = null, forced = undefined;
-  let phase = "idle";          // idle | walking | fading | ended
+  let phase = "idle";          // intro | idle | walking | fading | ended
   let camX = 0, rafId = null, lastMsgTimer = null;
 
   function newScene(){
@@ -610,6 +614,22 @@
     if(text) lastMsgTimer = setTimeout(() => { m.textContent = ""; m.className = ""; }, 2600);
   }
   function setChoices(enabled){ $("goBtn").disabled = !enabled; $("backBtn").disabled = !enabled; }
+  function showIntroControls(on){ $("memoBtn").hidden = !on; $("goBtn").hidden = on; $("backBtn").hidden = on; }
+
+  /* 最初は異変の無い「いつもの通路」を見せて覚えてもらう。判定はしない(8番出口の最初の通路と同じ)。 */
+  function startIntro(){
+    phase = "intro";
+    scene = buildScene(0); anomaly = null; camX = 0;
+    renderScene(scene, 0, performance.now());
+    showIntroControls(true);
+    const m = $("msg"); clearTimeout(lastMsgTimer);
+    m.textContent = "これが「いつもの通路」。よく覚えて"; m.className = "intro";
+  }
+  function leaveIntro(){
+    if(phase !== "intro") return;
+    showIntroControls(false); setMsg("");
+    walk(1, () => { newScene(); phase = "idle"; setChoices(true); });
+  }
 
   function choose(dir){                    // dir: "go" | "back"
     if(phase !== "idle") return;
@@ -658,8 +678,8 @@
     Sfx.ensure(); Sfx.startBgm();
     PlayCounts.increment("mochi-exit");
     round = 0; miss = 0; usedIds = new Set(); startedAt = performance.now();
-    phase = "idle"; paintHud(); setMsg(""); setChoices(true);
-    show("play"); fitCanvas(); newScene();
+    paintHud(); setChoices(true);
+    show("play"); fitCanvas(); startIntro();
   }
   function finish(){
     phase = "ended"; Sfx.stopBgm(); Sfx.clear();
@@ -686,9 +706,11 @@
     el.addEventListener("contextmenu", e => e.preventDefault());
   }
   bindChoice("goBtn", "go"); bindChoice("backBtn", "back");
+  $("memoBtn").addEventListener("pointerdown", function(e){ e.preventDefault(); leaveIntro(); });
+  $("memoBtn").addEventListener("click", function(e){ e.preventDefault(); if(e.detail === 0) leaveIntro(); });
   window.addEventListener("keydown", function(e){
     if(!$("play").classList.contains("active")) return;
-    if(e.key === "ArrowRight"){ e.preventDefault(); choose("go"); }
+    if(e.key === "ArrowRight"){ e.preventDefault(); if(phase === "intro") leaveIntro(); else choose("go"); }
     if(e.key === "ArrowLeft"){ e.preventDefault(); choose("back"); }
   });
   $("startBtn").addEventListener("click", startGame);
@@ -706,6 +728,7 @@
     debugState(){ return { round, miss, phase, anomaly: anomaly ? anomaly.id : null, used: Array.from(usedIds) }; },
     forceAnomaly(id){ forced = id; },            // null=異変なし, id=その異変, undefined=ランダムに戻す
     choose, startGame,
+    skipIntro(){ if(phase !== "intro") return; showIntroControls(false); setMsg(""); newScene(); phase = "idle"; setChoices(true); },
     anomalies: ANOMALIES.map(a => ({ id:a.id, level:a.level, desc:a.desc })),
     renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) ANOMALY_BY_ID[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },
     pickAnomaly, resetUsed(){ usedIds = new Set(); },

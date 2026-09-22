@@ -36,8 +36,11 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
    `allowedLevels(round)` は `<3:[1] / <6:[1,2] / それ以上:[1,2,3]`、最上位 level を重み 2 で優先。
 5. **描画** — `renderScene(scene, camX, t)`。部品ごとの `draw*` を奥から順に呼ぶ。
    `camX` は歩行演出の横スクロール（遠景は 0.3 倍のパララックス）。静止中は rAF を回さない。
-6. **Game** — `phase: idle | walking | fading | ended`。`choose(dir)` が判定→`walk()` 演出→
-   `newScene()`。`round>=8` で `finish()`。画面は `SCREENS=["title","play","result"]` + `show()`。
+6. **Game** — `phase: intro | idle | walking | fading | ended`。`startGame()` はまず `startIntro()` で
+   **異変の無い「いつもの通路」を判定なしで見せる**（8番出口の最初の通路と同じ。基準を覚える
+   フェーズが無いと何が異変か判断できない、というユーザー指摘で追加）。「覚えた！」で `leaveIntro()`
+   → `walk()` → 最初の判定シーンへ。以降は `choose(dir)` が判定→`walk()`→`newScene()`。
+   `round>=8` で `finish()`。画面は `SCREENS=["title","play","result"]` + `show()`。
 
 ### 異変を追加するとき
 
@@ -64,7 +67,7 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
 
 ## `window.__exit` — テストフック
 
-`debugState()` / `forceAnomaly(id|null)`（次の `newScene` で1回だけ効く。`undefined` でランダムに戻る）/
+`debugState()` / `skipIntro()`（intro を演出なしで抜ける。テストは `startGame()` の直後に必ず呼ぶ）/ `forceAnomaly(id|null)`（次の `newScene` で1回だけ効く。`undefined` でランダムに戻る）/
 `choose("go"|"back")` / `startGame()` / `anomalies` / `renderOnly(id, round)` / `pickAnomaly(round)` /
 `resetUsed()`。通しテストは「`forceAnomaly(null)` → 現在シーンの `anomaly` を見て正解側を `choose`」を
 8回で `#result` が active になることを確認する。`walk()` の演出が約 1 秒あるので各手の後に
