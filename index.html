@@ -177,10 +177,10 @@
     }
     // A=0。Am7 → Dm7 → E7 → Am7 の短調ループ。少し不穏な和菓子屋の夕暮れ
     const CHORDS = [
-      { tones:[0,3,7,10],  bass:0  },   // Am7
-      { tones:[5,8,12,15], bass:-7 },   // Dm7
-      { tones:[7,11,14,17],bass:-5 },   // E7
-      { tones:[0,3,7,10],  bass:0  },   // Am7
+      { tones:[0,3,7,10],  bass:12 },   // Am7  (ベースは1オクターブ上。73〜110Hzの重低音が耳障りだったため)
+      { tones:[5,8,12,15], bass:5  },   // Dm7
+      { tones:[7,11,14,17],bass:7  },   // E7
+      { tones:[0,3,7,10],  bass:12 },   // Am7
     ];
     const LEAD = [
       [0,null,null,2, null,null,1,null, 3,null,null,2, null,null,null,null],
@@ -205,7 +205,7 @@
       bgmDelay.connect(bgmDelayFb); bgmDelayFb.connect(bgmDelay);
       bgmDelay.connect(bgmDelayWet); bgmDelayWet.connect(busGain);
       hatFilter = ac.createBiquadFilter(); hatFilter.type = "highpass"; hatFilter.frequency.value = 6000; hatFilter.connect(busGain);
-      bassFilter = ac.createBiquadFilter(); bassFilter.type = "lowpass"; bassFilter.frequency.value = 380; bassFilter.connect(busGain);
+      bassFilter = ac.createBiquadFilter(); bassFilter.type = "lowpass"; bassFilter.frequency.value = 900; bassFilter.connect(busGain);
       const len = Math.floor(ac.sampleRate * 0.3);
       noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
       const d = noiseBuf.getChannelData(0);
@@ -226,10 +226,10 @@
     }
     function bgmStepAt(step, at){
       const bar = Math.floor(step / 16) % 4, i = step % 16, chord = CHORDS[bar];
-      if (i === 0 || i === 8) bgmOsc(at, 0.2, 120, 0.3, "sine", busGain, 45);
+      if (i === 0 || i === 8) bgmOsc(at, 0.09, 330, 0.12, "triangle", busGain, 220);   // 拍頭は軽い木のタップ音(低いキックは使わない)
       if (i % 4 === 2) noiseHit(at, 0.025, 0.03, hatFilter);
       const b = BASSLINE[bar][i];
-      if (b != null) bgmOsc(at, bgmStepSec * 5, noteHz(chord.bass), 0.26, "triangle", bassFilter);
+      if (b != null) bgmOsc(at, bgmStepSec * 5, noteHz(chord.bass), 0.16, "triangle", bassFilter);
       if (i % 8 === 0) {
         const dur = bgmStepSec * 7.5;
         chord.tones.forEach(function(t){

@@ -24,7 +24,9 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
 
 1. **Sfx** — WebAudio。効果音（`step/good/bad/clear`）と BGM（先読み 0.6 秒のスケジューラ、
    `tennis-game`/`neon-void` と同じ方式）。曲は BPM 96 の Am7→Dm7→E7→Am7 ループで
-   「かわいいが少し不穏」。実測 約14 ノード/秒。
+   「かわいいが少し不穏」。実測 約14 ノード/秒。**ベースは A2(110Hz)〜E3 の帯に置き、キックは
+   使わない**: 初版は 120→45Hz のサイン波キックと 73〜82Hz のサブベースがあり「重低音が時々混じって
+   耳障り」と指摘された（2026-09-22）。低域を足すときは 110Hz 未満を避ける。
 2. **PlayCounts** — Firestore REST（SDK 無し）。`gameId:"mochi-exit"`、ローカル配信では書かない。
 3. **Best** — `localStorage["mochi-exit:best"]` に `{timeMs, miss}` を JSON 1 キーで保存。
 4. **Scene / ANOMALIES** — 本作の核。`buildScene(round)` が**部品オブジェクトの集合**
