@@ -341,7 +341,8 @@
     };
   }
 
-  /* 異変ライブラリ。level 1=明らか, 2=中間, 3=微妙。desc は結果メッセージ用。
+  /* 異変ライブラリ。level 1=明らか, 2=中間, 3=微妙。desc は画面には出さず(答えは教えない方針)、
+     debugState / anomalies 一覧での識別用。
      追加するときは apply でシーンを書き換えるだけでよい(自動検証が「見えているか」を検査する)。 */
   const ANOMALIES = [
     { id:"mochi_twins",   level:1, desc:"もちが2匹いた",             apply:s=>{ s.mochi.count = 2; } },
@@ -637,10 +638,10 @@
     const correct = hadAnomaly ? dir === "back" : dir === "go";
     if(correct){
       round++; Sfx.good();
-      setMsg(hadAnomaly ? "正解：" + anomaly.desc : "正解：異変はなかった", "good");
+      setMsg("正解", "good");
     } else {
       miss++; Sfx.bad();
-      setMsg(hadAnomaly ? "見逃した… " + anomaly.desc : "異変は無かった… 出口0に戻る", "bad");
+      setMsg("不正解… 出口0に戻る", "bad");   // 何が異変だったかは教えない(答え合わせはプレイヤー自身の楽しみ)
       round = 0;
     }
     paintHud();
