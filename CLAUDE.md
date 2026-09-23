@@ -32,7 +32,15 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
    足したくなったら先にユーザーに聞くこと。
 2. **PlayCounts** — Firestore REST（SDK 無し）。`gameId:"mochi-exit"`、ローカル配信では書かない。
 3. **Best** — `localStorage["mochi-exit:best"]` に `{timeMs, miss}` を JSON 1 キーで保存。
-4. **Scene / ANOMALIES** — 本作の核。`buildScene(round)` が**部品オブジェクトの集合**
+4. **Scene / THEMES / ANOMALIES** — 本作の核。`THEMES`(3種: dusk/morning/twilight)は空・壁・遠景の
+   店・床・屋根の色だけを変える「雰囲気」の抽選プール。**`startGame()` で毎プレイ1回だけ抽選**し
+   (`currentTheme`)、そのプレイ中はずっと同じテーマを使う — プレイ中にベース画像が変わると
+   「これは異変？それともテーマが変わっただけ？」と紛らわしくなるため（2026-09-23、ユーザー要望で追加）。
+   **THEMES は ANOMALIES が触る値（のれん・看板・提灯の点灯・扉・臼の湯気・ポスター色・団子の色・
+   もちの姿・影・時計・出口看板）には一切触れない**。触れると、その値を base に持つテーマでは
+   対応する異変が「もともとその状態」になり見えなくなる（後述の自動検証で必ず気づける設計）。
+   テーマを増やすときも同じ制約を守ること。
+   `buildScene(round)` が**部品オブジェクトの集合**
    （空・のれん・看板・提灯配列・団子の色順・臼の湯気・ポスター・街灯・扉・出口看板・もち・猫・
    床タイル・影の向き・時計）を返す。**異変は `ANOMALIES[i].apply(scene)` でこのオブジェクトを
    書き換えるだけ**で、描画側は異変の存在を知らない。`level` 1=明らか / 2=中間 / 3=微妙、
@@ -64,7 +72,8 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
 
 1. `buildScene()` に部品の状態を足す（描画にも反映する）
 2. `ANOMALIES` に `{id, level, desc, apply}` を1行足す
-3. **必ず視認性を自動検証する**: `window.__exit.renderOnly(id, round)` は判定に触れず
+3. **必ず視認性を自動検証する**: `window.__exit.setTheme(i)`（`0..themeCount-1`）で全テーマに切り替え、
+   各テーマで以下を行う。`window.__exit.renderOnly(id, round)` は判定に触れず
    その異変だけを描いた `toDataURL()` を返す。基準（`renderOnly(null, round)`）とのピクセル差分が
    小さい異変は「見えていない」。初版で `mochi_facing` は**差分 0**（もちが左右対称で向きを変えても
    何も変わらなかった）、`sign_typo`（「もぢ」の濁点 2 つ）は 31px で発覚し、団子串を持たせる／
