@@ -36,8 +36,12 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
    （2026-09-23、「テーマごとにアイテムや異変を変えて、各30個に」という要望で色違いから作り替えた）:
    `dusk`=夕焼けのもち屋 / `morning`=朝の茶屋 / `twilight`=たそがれの縁日。各テーマは
    `{id, label, hold, clouds, sky, farShops, farRoof, floor, floorBase, build(s), back(s,cam,t), front?(s,cam,t), anomalies:[30]}`。
-   **`startGame()` で毎プレイ1回だけ抽選**し(`currentTheme`)、そのプレイ中はずっと同じ通り
-   （途中で通りが変わると「異変？」と紛らわしいため）。`buildScene(round)` は全テーマ共通の部品
+   **通りはプレイヤーが選ぶ**: 「はじめる」→ `openSelect()` の選択画面（`#select`）で3つの通り
+   ＋「おまかせ（ランダム）」から選ぶ（2026-09-23 要望）。タイトル自体にはテーマ選択を置かない
+   （タイトルはロゴ+はじめる+あそびかただけ、という固定方針のため）。カードのサムネイルは
+   `renderScene(buildScene(0))` を `toDataURL` したもの＝本番と同じ絵なので、描画を変えれば自動で追従する。
+   `startGame(themeIdx|null)` で決まり、そのプレイ中はずっと同じ通り（途中で変わると「異変？」と紛らわしい）。
+   「もういちど」は同じ選び方（`lastThemeChoice`、おまかせならまた抽選）で始める。`buildScene(round)` は全テーマ共通の部品
    （空・遠景・床タイル・影・出口看板・もち）を作ってから `theme.build(s)` でそのテーマの部品を足す。
    `s.theme` をシーンに持たせてあり、`renderScene()` は `drawSky→drawFarShops→drawFloor→theme.back→
    drawExitSign→drawMochis→theme.front→夜の暗幕→右上チップ` の順に描く。
@@ -50,9 +54,13 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
    風船に持ち替える異変もある）。持ち物で左右非対称にしてあるので `mochi_facing` が成立する。
    `pickAnomaly(round)`: `currentTheme.anomalies` から出現率 `ANOMALY_RATE=0.6`、`usedIds` で一巡するまで
    再出題しない、`allowedLevels(round)` は `<3:[1] / <6:[1,2] / それ以上:[1,2,3]`、最上位 level を重み 2 で優先。
+   **1回脱出した後（`foundUnlocked`）は未発見の異変だけから出す**（「脱出後はまだ出ていない/正解していない
+   異変を出して」という要望。2026-09-23）: round に合う level の未発見 → 無ければ level を問わず未発見 →
+   それも無ければ（全部発見済み or このプレイで使い切った）通常の出題。つまり終盤は序盤でも level 3 が出る。
+   出現率 0.6 は変えない（異変なしの回が混ざる疑心暗鬼は残す）。
    **Found**（3b）: 異変のある通路で正しく「引き返す」を選ぶと、その異変 id を
    `localStorage["mochi-exit:found"] = {テーマid:[id...]}` に記録する（未クリアでも記録はする）。
-   表示は**1回脱出してから**（`Best.load().timeMs > 0` → `foundUnlocked`）で、キャンバス右上の
+   選択画面のカードにも「見つけた異変 n / 30」を出す（脱出後のみ）。表示は**1回脱出してから**（`Best.load().timeMs > 0` → `foundUnlocked`）で、キャンバス右上の
    テーマ名チップの左に「発見 n/30」を出す。結果画面にもそのテーマの発見数と今回の新規数(+k)を出す
    （「一回クリアしたあと、見つけた異変の数をカウントして画面の端に」という要望。2026-09-23）。
 5. **描画** — `renderScene(scene, camX, t)`。部品ごとの `draw*` を奥から順に呼ぶ。

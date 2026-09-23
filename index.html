@@ -52,6 +52,19 @@
     box-shadow:none;font-size:13px;padding:10px 22px;letter-spacing:.06em;margin-top:12px;}
   #bestLabel,#playCountLabel{margin-top:12px;font-size:12px;opacity:.6;min-height:14px;}
 
+  /* ===== 通りを選ぶ(はじめる の次) ===== */
+  #select{justify-content:center;padding:20px 16px;text-align:center;gap:10px;}
+  #select h2{font-size:18px;letter-spacing:.08em;margin-bottom:6px;}
+  .themeCard{display:flex;align-items:center;gap:12px;width:100%;max-width:340px;padding:8px;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:14px;
+    color:var(--text);cursor:pointer;text-align:left;touch-action:manipulation;transition:transform .1s,background .15s;}
+  .themeCard:active{transform:scale(.97);background:rgba(255,255,255,.14);}
+  .themeCard img{width:112px;height:70px;border-radius:8px;flex:none;object-fit:cover;background:#1a2140;}
+  .themeCard .name{font-size:15px;font-weight:800;letter-spacing:.04em;}
+  .themeCard .found{margin-top:4px;font-size:12px;color:var(--accent);min-height:14px;}
+  .themeCard.random{justify-content:center;padding:14px 8px;font-size:15px;font-weight:800;}
+  #select .btn.ghost{margin-top:6px;}
+
   /* ===== プレイ ===== */
   #play{justify-content:flex-start;}
   #hud{width:100%;display:flex;align-items:center;justify-content:space-between;
@@ -116,14 +129,22 @@
     <div class="howtoCard">
       <h2>あそびかた</h2>
       <div class="rule">
-        <p>もち屋・茶屋・縁日のどれかの通りをくり返し歩きます（毎回ランダム）。最初に<b>「いつもの通路」</b>を見せるので、よく覚えてください。</p>
+        <p>もち屋・茶屋・縁日から通りを選び（おまかせも可）、その通りをくり返し歩きます。最初に<b>「いつもの通路」</b>を見せるので、よく覚えてください。</p>
         <p>いつもと<b>違うところ（異変）</b>があれば <b>◀ 引き返す</b>、なにも無ければ <b>進む ▶</b>。</p>
         <p>正解を重ねて <b>出口8</b> にたどり着けば脱出。間違えると出口0からやり直しです。</p>
-        <p>一度脱出すると、見つけた異変の数（各通り30個）が画面の右上に出ます。</p>
+        <p>一度脱出すると、見つけた異変の数（各通り30個）が画面の右上に出て、それからはまだ見つけていない異変が出てきます。</p>
       </div>
       <button class="btn ghost" id="howtoCloseBtn">とじる</button>
     </div>
   </div>
+
+  <!-- ================= 通りを選ぶ ================= -->
+  <section id="select" class="screen">
+    <h2>どの通りを歩く？</h2>
+    <div id="themeList" style="display:contents"></div>
+    <button class="themeCard random" id="randomBtn">おまかせ（ランダム）</button>
+    <button class="btn ghost" id="selectBackBtn">もどる</button>
+  </section>
 
   <!-- ================= プレイ ================= -->
   <section id="play" class="screen">
@@ -535,6 +556,14 @@
     if(pool.length === 0){
       list.filter(a => levels.includes(a.level)).forEach(a => usedIds.delete(a.id));
       pool = list.filter(a => levels.includes(a.level));
+    }
+    // 1回脱出した後は、まだ見つけていない(正解していない)異変から出す。round に合う level に
+    // 未発見が無ければ level を問わず未発見から。全部見つけたら通常の出題に戻る
+    if(foundUnlocked){
+      const found = new Set(Found.list(currentTheme.id));
+      const fresh = list.filter(a => !found.has(a.id) && !usedIds.has(a.id));
+      const freshLv = fresh.filter(a => levels.includes(a.level));
+      if(freshLv.length) pool = freshLv; else if(fresh.length) pool = fresh;
     }
     // 高い level をやや優先(round が進んだら微妙な異変を出したい)
     const weights = pool.map(a => a.level === Math.max.apply(null, levels) ? 2 : 1);
@@ -1015,7 +1044,7 @@
   /* =========================================================
      6. Game — 状態機械。idle(選択待ち) → walking(演出) → 次シーン。
      ========================================================= */
-  const SCREENS = ["title","play","result"];
+  const SCREENS = ["title","select","play","result"];
   function show(id){ SCREENS.forEach(s => $(s).classList.toggle("active", s === id)); }
 
   let round = 0, miss = 0, startedAt = 0;
@@ -1108,10 +1137,33 @@
     }
     rafId = requestAnimationFrame(frame);
   }
-  function startGame(){
+  /* 通りを選ぶ画面。サムネイルは本番と同じ renderScene で「いつもの通路」を描いて作る */
+  let lastThemeChoice = null;          // null=おまかせ。「もういちど」は同じ選び方で始める
+  function openSelect(){
+    const unlocked = Best.load().timeMs > 0;
+    const keepTheme = currentTheme, keepUnlocked = foundUnlocked;
+    foundUnlocked = false;
+    const list = $("themeList"); list.innerHTML = "";
+    THEMES.forEach((th, i) => {
+      currentTheme = th; renderScene(buildScene(0), 0, 1000);
+      const b = document.createElement("button"); b.className = "themeCard";
+      const img = document.createElement("img"); img.src = canvas.toDataURL(); img.alt = "";
+      const box = document.createElement("div");
+      const nm = document.createElement("div"); nm.className = "name"; nm.textContent = th.label;
+      const fd = document.createElement("div"); fd.className = "found";
+      fd.textContent = unlocked ? ("見つけた異変 " + countFound(th) + " / " + th.anomalies.length) : "";
+      box.appendChild(nm); box.appendChild(fd); b.appendChild(img); b.appendChild(box);
+      b.addEventListener("click", () => startGame(i));
+      list.appendChild(b);
+    });
+    currentTheme = keepTheme; foundUnlocked = keepUnlocked;
+    show("select");
+  }
+  function startGame(themeIdx){
     Sfx.ensure(); Sfx.startBgm();
     PlayCounts.increment("mochi-exit");
-    currentTheme = THEMES[Math.floor(Math.random() * THEMES.length)];
+    lastThemeChoice = (typeof themeIdx === "number" && THEMES[themeIdx]) ? themeIdx : null;
+    currentTheme = THEMES[lastThemeChoice != null ? lastThemeChoice : Math.floor(Math.random() * THEMES.length)];
     round = 0; miss = 0; usedIds = new Set(); startedAt = performance.now();
     runNewFinds = 0; foundUnlocked = Best.load().timeMs > 0; foundCache = countFound(currentTheme);
     paintHud(); setChoices(true);
@@ -1152,10 +1204,12 @@
     if(e.key === "ArrowRight"){ e.preventDefault(); if(phase === "intro") leaveIntro(); else choose("go"); }
     if(e.key === "ArrowLeft"){ e.preventDefault(); choose("back"); }
   });
-  $("startBtn").addEventListener("click", startGame);
+  $("startBtn").addEventListener("click", openSelect);
+  $("randomBtn").addEventListener("click", () => startGame(null));
+  $("selectBackBtn").addEventListener("click", () => show("title"));
   $("howtoBtn").addEventListener("click", function(){ $("howtoOverlay").classList.add("show"); });
   $("howtoCloseBtn").addEventListener("click", function(){ $("howtoOverlay").classList.remove("show"); });
-  $("retryBtn").addEventListener("click", startGame);
+  $("retryBtn").addEventListener("click", () => startGame(lastThemeChoice));
   $("toTitleBtn").addEventListener("click", quit);
   $("quitBtn").addEventListener("click", quit);
   document.addEventListener("visibilitychange", function(){ if(document.hidden) Sfx.stopBgm(); else if($("play").classList.contains("active") && phase !== "ended") Sfx.startBgm(); });
