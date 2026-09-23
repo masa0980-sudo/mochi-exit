@@ -116,9 +116,10 @@
     <div class="howtoCard">
       <h2>あそびかた</h2>
       <div class="rule">
-        <p>和菓子商店街の通路をくり返し歩きます。最初に<b>「いつもの通路」</b>を見せるので、よく覚えてください。</p>
+        <p>もち屋・茶屋・縁日のどれかの通りをくり返し歩きます（毎回ランダム）。最初に<b>「いつもの通路」</b>を見せるので、よく覚えてください。</p>
         <p>いつもと<b>違うところ（異変）</b>があれば <b>◀ 引き返す</b>、なにも無ければ <b>進む ▶</b>。</p>
         <p>正解を重ねて <b>出口8</b> にたどり着けば脱出。間違えると出口0からやり直しです。</p>
+        <p>一度脱出すると、見つけた異変の数（各通り30個）が画面の右上に出ます。</p>
       </div>
       <button class="btn ghost" id="howtoCloseBtn">とじる</button>
     </div>
@@ -313,80 +314,212 @@
   })();
 
   /* =========================================================
+     3b. Found — 見つけた異変(テーマごと)。正しく「引き返す」を選べた異変の id を
+         localStorage["mochi-exit:found"] = { テーマid: [異変id, ...] } に貯める。
+     ========================================================= */
+  const Found = (function(){
+    const KEY = "mochi-exit:found";
+    function all(){ try{ const o = JSON.parse(localStorage.getItem(KEY) || "{}"); return (o && typeof o === "object") ? o : {}; }catch(e){ return {}; } }
+    function list(themeId){ const a = all()[themeId]; return Array.isArray(a) ? a : []; }
+    function add(themeId, id){
+      const o = all(), a = Array.isArray(o[themeId]) ? o[themeId] : [];
+      if(a.includes(id)) return false;
+      a.push(id); o[themeId] = a;
+      try{ localStorage.setItem(KEY, JSON.stringify(o)); }catch(e){}
+      return true;
+    }
+    return { list, add };
+  })();
+
+  /* =========================================================
      4. Scene — 通路1枚の「部品の集合」。異変は buildScene() の結果を
-        ANOMALIES[].apply() で書き換えるだけで作る(描画側は何も知らない)。
+        theme.anomalies[].apply() で書き換えるだけで作る(描画側は何も知らない)。
      ========================================================= */
   const VIEW_W = 640, VIEW_H = 400;
   const GROUND_Y = 300;
   const GOAL = 8;
+  const FONT = "'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
 
-  /* ベースとなる通路のテーマ。1プレイ(startGame)ごとに1つ抽選し、そのプレイ中はずっと同じテーマを使う
-     (プレイ中に背景が変わると「異変」と紛らわしくなるため)。ANOMALIES が触る値(のれん・看板・提灯の
-     点灯・扉・臼の湯気・ポスター色・団子の色・もちの姿・影・時計・出口看板)は一切変えず、雰囲気だけ
-     (空・壁・遠景の店・床・屋根の色)を変える — こうすれば異変の見え方はテーマに関わらず同じになる。 */
+  /* テーマ = 通りそのもの。店・アイテム・異変(各30)がテーマごとに別。1プレイ(startGame)ごとに
+     1つ抽選し、そのプレイ中はずっと同じテーマを使う(途中で通りが変わると異変と紛らわしいため)。
+     build(s) が部品を足し、back/front が描き、anomalies がその部品を書き換える。 */
   const THEMES = [
-    { id:"dusk",  label:"夕焼け", sky:{top:"#f6c7a2", bottom:"#fde7cf"}, wall:{color:"#fbf1de", plank:"#e6d3b5"},
-      farShops:"#c9a58a", floor:"#e9d9bd", floorBase:"#c9a883", roof:"#8c5a3c", roofDark:"#6f4630" },
-    { id:"morning", label:"朝", sky:{top:"#cfe9f7", bottom:"#fdf1de"}, wall:{color:"#f6efe1", plank:"#ddc9a8"},
-      farShops:"#b9a48f", floor:"#ecdfc4", floorBase:"#c3ad82", roof:"#9a6b46", roofDark:"#7a5030" },
-    { id:"twilight", label:"たそがれ", sky:{top:"#e7b3c9", bottom:"#ffd9b0"}, wall:{color:"#f7e6d2", plank:"#e0c49a"},
-      farShops:"#b98f8a", floor:"#e3cfae", floorBase:"#b8926a", roof:"#7d4a35", roofDark:"#5c3524" },
+    {
+      id:"dusk", label:"夕焼けのもち屋", hold:"dango", clouds:true,
+      sky:{top:"#f6c7a2", bottom:"#fde7cf"}, farShops:"#c9a58a", farRoof:"#b08c72", floor:"#e9d9bd", floorBase:"#c9a883",
+      build(s){
+        s.wall = { color:"#fbf1de", plank:"#e6d3b5", roof:"#8c5a3c", roofDark:"#6f4630" };
+        s.noren = { color:"#4e6fb8", text:"もち", show:true };
+        s.sign = { text:"もち屋", flip:false };
+        s.lanterns = [ {lit:true,color:"#ff8a5c"}, {lit:true,color:"#ff8a5c"}, {lit:true,color:"#ff8a5c"} ];
+        s.dango = { colors:["#f6a0b0","#fdfaf3","#9fd69a"] };   // 三色団子は 桃・白・緑 の順
+        s.usu = { show:true, steam:true };
+        s.poster = { flip:false, color:"#ffd6e0" };
+        s.lamp = { on:true, color:"#ffe9a0" };
+        s.door = { open:false, knobLeft:false };
+        s.clock = { hour:8 };
+        s.cat = false; s.crow = false;
+      },
+      back(s, cam){ drawShop(s, cam); drawLanterns(s, cam); drawStand(s, cam); drawLamp(s, cam); },
+      front(s, cam){ if(s.cat){ ctx.save(); ctx.translate(-cam, 0); drawCat(455, GROUND_Y-8); ctx.restore(); } },
+      anomalies:[
+        { id:"mochi_twins",   level:1, desc:"もちが2匹いた",               apply:s=>{ s.mochi.count = 2; } },
+        { id:"lantern_out",   level:1, desc:"真ん中の提灯が消えていた",     apply:s=>{ s.lanterns[1].lit = false; } },
+        { id:"door_open",     level:1, desc:"お店の扉が開いていた",         apply:s=>{ s.door.open = true; } },
+        { id:"cat",           level:1, desc:"猫がいた",                     apply:s=>{ s.cat = true; } },
+        { id:"night",         level:1, desc:"空が夜になっていた",           apply:s=>{ s.sky.night = true; s.sky.top = "#2b2a5a"; s.sky.bottom = "#6b4f8a"; } },
+        { id:"mochi_big",     level:1, desc:"もちが大きかった",             apply:s=>{ s.mochi.size = 2.2; } },
+        { id:"crow",          level:1, desc:"看板にカラスがとまっていた",   apply:s=>{ s.crow = true; } },
+        { id:"usu_gone",      level:1, desc:"臼と杵が無かった",             apply:s=>{ s.usu.show = false; } },
+        { id:"noren_gone",    level:1, desc:"のれんが無かった",             apply:s=>{ s.noren.show = false; } },
+        { id:"dango_order",   level:2, desc:"三色団子の色の順番が違った",   apply:s=>{ s.dango.colors = ["#9fd69a","#fdfaf3","#f6a0b0"]; } },
+        { id:"noren_color",   level:2, desc:"のれんの色が違った",           apply:s=>{ s.noren.color = "#c8503c"; } },
+        { id:"lamp_off",      level:2, desc:"街灯が消えていた",             apply:s=>{ s.lamp.on = false; } },
+        { id:"no_steam",      level:2, desc:"臼の湯気が出ていなかった",     apply:s=>{ s.usu.steam = false; } },
+        { id:"poster_color",  level:2, desc:"ポスターの色が違った",         apply:s=>{ s.poster.color = "#c4e3ff"; } },
+        { id:"lantern_extra", level:2, desc:"提灯が4つあった",              apply:s=>{ s.lanterns.push({lit:true,color:"#ff8a5c"}); } },
+        { id:"mochi_facing",  level:2, desc:"もちが逆を向いていた",         apply:s=>{ s.mochi.facing = -1; } },
+        { id:"sign_mirror",   level:2, desc:"看板の文字が鏡文字だった",     apply:s=>{ s.sign.flip = true; } },
+        { id:"dango_four",    level:2, desc:"団子が4つあった",              apply:s=>{ s.dango.colors.push("#f6a0b0"); } },
+        { id:"lantern_white", level:2, desc:"提灯が1つだけ白かった",        apply:s=>{ s.lanterns[2].color = "#f4f0e6"; } },
+        { id:"sign_typo",     level:3, desc:"看板が「もち家」になっていた", apply:s=>{ s.sign.text = "もち家"; } },
+        { id:"poster_flip",   level:3, desc:"ポスターが左右反転していた",   apply:s=>{ s.poster.flip = true; } },
+        { id:"mochi_eyes",    level:3, desc:"もちの目がつり上がっていた",   apply:s=>{ s.mochi.eyeTilt = 1; } },
+        { id:"exit_number",   level:3, desc:"出口の番号が違っていた",       apply:s=>{ s.exitSign.n = (s.exitSign.n + 3) % 10; } },
+        { id:"tiles_shift",   level:3, desc:"床のタイルがずれていた",       apply:s=>{ s.tiles.shift = 1; } },
+        { id:"shadow",        level:3, desc:"影の向きが逆だった",           apply:s=>{ s.shadowDir = -1; } },
+        { id:"no_cheeks",     level:3, desc:"もちのほっぺが無かった",       apply:s=>{ s.mochi.cheeks = false; } },
+        { id:"clock",         level:3, desc:"時計の針がずれていた",         apply:s=>{ s.clock.hour = 5; } },
+        { id:"noren_text",    level:3, desc:"のれんの字が「もも」だった",   apply:s=>{ s.noren.text = "もも"; } },
+        { id:"knob_left",     level:3, desc:"扉の取っ手が左側にあった",     apply:s=>{ s.door.knobLeft = true; } },
+        { id:"lamp_orange",   level:3, desc:"街灯の光がオレンジ色だった",   apply:s=>{ s.lamp.color = "#ff9a5a"; } },
+      ],
+    },
+    {
+      id:"morning", label:"朝の茶屋", hold:"cup", clouds:false,
+      sky:{top:"#cfe9f7", bottom:"#fdf1de"}, farShops:"#b9c4a8", farRoof:"#8e9a7c", floor:"#ecdfc4", floorBase:"#c3ad82",
+      build(s){
+        s.sun = "sun";
+        s.roof = { color:"#5d6a7a" };
+        s.sign = { text:"甘味処", bg:"#3b2a1e" };
+        s.sparrows = { count:2, facing:1 };
+        s.catRoof = false;
+        s.furin = { show:true, tanzaku:"#e2574c" };
+        s.shoji = { open:false, hole:false };
+        s.menu = ["抹茶","ぜんざい","わらび餅"];
+        s.bench = { color:"#c8322e" };
+        s.umbrella = { open:true, color:"#d8392f" };
+        s.cups = ["#6f9a5a","#6f9a5a"]; s.cupSteam = true;
+        s.ohagi = 3;
+        s.fence = { show:true, tilt:false };
+        s.asagao = ["#5b6fd6","#b35bd6","#5b6fd6"];
+        s.rain = false;
+      },
+      back(s, cam){ drawTeaHouse(s, cam); },
+      front(s){ if(s.rain) drawRain(); },
+      anomalies:[
+        { id:"umbrella_closed", level:1, desc:"大きな傘が閉じていた",           apply:s=>{ s.umbrella.open = false; } },
+        { id:"bench_blue",      level:1, desc:"縁台の布が水色だった",           apply:s=>{ s.bench.color = "#8fc1ec"; } },
+        { id:"shoji_open",      level:1, desc:"障子が開いていて中が暗かった",   apply:s=>{ s.shoji.open = true; } },
+        { id:"sun_moon",        level:1, desc:"太陽が灰色の月になっていた",     apply:s=>{ s.sun = "moon"; } },
+        { id:"cat_roof",        level:1, desc:"屋根の上に猫がいた",             apply:s=>{ s.catRoof = true; } },
+        { id:"fence_gone",      level:1, desc:"竹垣が無かった",                 apply:s=>{ s.fence.show = false; } },
+        { id:"mochi_on_bench",  level:1, desc:"もちが縁台に乗っていた",         apply:s=>{ s.mochi.x = 205; s.mochi.y = -42; } },
+        { id:"ohagi_empty",     level:1, desc:"おはぎの皿が空だった",           apply:s=>{ s.ohagi = 0; } },
+        { id:"rain",            level:1, desc:"雨が降っていた",                 apply:s=>{ s.rain = true; } },
+        { id:"sign_red",        level:2, desc:"看板の板が赤かった",             apply:s=>{ s.sign.bg = "#b8322c"; } },
+        { id:"menu_order",      level:2, desc:"お品書きの札の順番が違った",     apply:s=>{ s.menu = ["わらび餅","ぜんざい","抹茶"]; } },
+        { id:"cups_three",      level:2, desc:"湯呑が3つあった",                apply:s=>{ s.cups.push("#6f9a5a"); } },
+        { id:"no_cup_steam",    level:2, desc:"湯呑の湯気が出ていなかった",     apply:s=>{ s.cupSteam = false; } },
+        { id:"furin_gone",      level:2, desc:"風鈴が無かった",                 apply:s=>{ s.furin.show = false; } },
+        { id:"asagao_white",    level:2, desc:"朝顔が全部白かった",             apply:s=>{ s.asagao = s.asagao.map(() => "#f7f3ff"); } },
+        { id:"umbrella_yellow", level:2, desc:"傘の色が黄色かった",             apply:s=>{ s.umbrella.color = "#f2c23a"; } },
+        { id:"sparrow_three",   level:2, desc:"屋根の雀が3羽いた",              apply:s=>{ s.sparrows.count = 3; } },
+        { id:"mochi_facing",    level:2, desc:"もちが逆を向いていた",           apply:s=>{ s.mochi.facing = -1; } },
+        { id:"roof_brown",      level:2, desc:"屋根瓦の色が違った",             apply:s=>{ s.roof.color = "#d98a4a"; } },
+        { id:"sign_typo",       level:3, desc:"看板が「甘味所」になっていた",   apply:s=>{ s.sign.text = "甘味所"; } },
+        { id:"shoji_hole",      level:3, desc:"障子に穴が空いていた",           apply:s=>{ s.shoji.hole = true; } },
+        { id:"menu_word",       level:3, desc:"「ぜんざい」が「おしるこ」だった", apply:s=>{ s.menu[1] = "おしるこ"; } },
+        { id:"ohagi_two",       level:3, desc:"おはぎが2個だった",              apply:s=>{ s.ohagi = 2; } },
+        { id:"tanzaku_color",   level:3, desc:"風鈴の短冊が黄色かった",         apply:s=>{ s.furin.tanzaku = "#f5e98a"; } },
+        { id:"fence_tilt",      level:3, desc:"竹垣が1本だけ傾いていた",       apply:s=>{ s.fence.tilt = true; } },
+        { id:"mochi_sleep",     level:3, desc:"もちが目を閉じていた",           apply:s=>{ s.mochi.eyesClosed = true; } },
+        { id:"cup_white",       level:3, desc:"湯呑が1つだけ白かった",         apply:s=>{ s.cups[1] = "#f0ece0"; } },
+        { id:"exit_number",     level:3, desc:"出口の番号が違っていた",         apply:s=>{ s.exitSign.n = (s.exitSign.n + 3) % 10; } },
+        { id:"asagao_extra",    level:3, desc:"朝顔の花が1つ多かった",          apply:s=>{ s.asagao.push("#b35bd6"); } },
+        { id:"sparrow_facing",  level:3, desc:"雀が逆を向いていた",             apply:s=>{ s.sparrows.facing = -1; } },
+      ],
+    },
+    {
+      id:"twilight", label:"たそがれの縁日", hold:"goldfish", clouds:false,
+      sky:{top:"#8a70b0", bottom:"#ffc49a"}, farShops:"#8a6f8a", farRoof:"#6a5270", floor:"#d9c3a0", floorBase:"#a98a66",
+      build(s){
+        s.fireworks = false;
+        s.moon = { r:16, full:true };
+        s.stars = 1;
+        s.lanterns = { pattern:["r","w","r","w","r"], lit:true, kanji:"祭" };
+        s.stallL = { sign:"金魚すくい", awning:"#d8392f", stripes:8 };
+        s.stallR = { sign:"わたあめ", awning:"#ff8fb3" };
+        s.fish = [ {c:"#ff6a2a",x:100,y:250,f:1,sc:1}, {c:"#ff6a2a",x:140,y:259,f:-1,sc:1},
+                   {c:"#2a2a2a",x:174,y:247,f:1,sc:1}, {c:"#ff6a2a",x:204,y:257,f:-1,sc:1} ];
+        s.poi = true;
+        s.balloons = ["#ff6b8a","#6bc2ff","#ffd34e"];
+        s.masks = ["fox","oni","hyot"]; s.maskUpside = -1;
+        s.wataame = ["#ffb3cf","#fdfaf3","#aee0ff"];
+        s.taiko = { show:true, color:"#b8322c", bachi:2 };
+      },
+      back(s, cam){ drawFestival(s, cam); },
+      anomalies:[
+        { id:"fireworks",        level:1, desc:"花火が上がっていた",               apply:s=>{ s.fireworks = true; } },
+        { id:"awning_green",     level:1, desc:"金魚すくいの屋根が緑だった",       apply:s=>{ s.stallL.awning = "#4fb35a"; } },
+        { id:"lanterns_out",     level:1, desc:"提灯が全部消えていた",             apply:s=>{ s.lanterns.lit = false; } },
+        { id:"taiko_gone",       level:1, desc:"太鼓が無かった",                   apply:s=>{ s.taiko.show = false; } },
+        { id:"balloons_gone",    level:1, desc:"風船が無かった",                   apply:s=>{ s.balloons = []; } },
+        { id:"tub_empty",        level:1, desc:"金魚が1匹もいなかった",           apply:s=>{ s.fish = []; } },
+        { id:"mochi_mask",       level:1, desc:"もちがお面をかぶっていた",         apply:s=>{ s.mochi.mask = true; } },
+        { id:"big_moon",         level:1, desc:"月が大きかった",                   apply:s=>{ s.moon.r = 34; } },
+        { id:"mochi_on_taiko",   level:1, desc:"もちが太鼓の上に乗っていた",       apply:s=>{ s.mochi.x = 560; s.mochi.y = -78; } },
+        { id:"sign_swap",        level:2, desc:"屋台の看板が入れ替わっていた",     apply:s=>{ const t = s.stallL.sign; s.stallL.sign = s.stallR.sign; s.stallR.sign = t; } },
+        { id:"balloon_same",     level:2, desc:"風船が全部同じ色だった",           apply:s=>{ s.balloons = s.balloons.map(() => "#ff6b8a"); } },
+        { id:"mask_order",       level:2, desc:"お面の並びが違った",               apply:s=>{ s.masks = ["hyot","fox","oni"]; } },
+        { id:"fish_black",       level:2, desc:"黒い金魚が3匹いた",               apply:s=>{ s.fish[0].c = "#2a2a2a"; s.fish[1].c = "#2a2a2a"; } },
+        { id:"wataame_white",    level:2, desc:"わたあめが全部白かった",           apply:s=>{ s.wataame = s.wataame.map(() => "#fdfaf3"); } },
+        { id:"lantern_pattern",  level:2, desc:"提灯の紅白の並びが違った",         apply:s=>{ s.lanterns.pattern = ["w","r","w","r","w"]; } },
+        { id:"poi_gone",         level:2, desc:"ポイが無かった",                   apply:s=>{ s.poi = false; } },
+        { id:"mochi_balloon",    level:2, desc:"もちが金魚ではなく風船を持っていた", apply:s=>{ s.mochi.hold = "balloon"; } },
+        { id:"mochi_facing",     level:2, desc:"もちが逆を向いていた",             apply:s=>{ s.mochi.facing = -1; } },
+        { id:"taiko_wood",       level:2, desc:"太鼓の胴が木の色だった",           apply:s=>{ s.taiko.color = "#d9a066"; } },
+        { id:"sign_typo",        level:3, desc:"看板が「金漁すくい」だった",       apply:s=>{ s.stallL.sign = "金漁すくい"; } },
+        { id:"wataame_two",      level:3, desc:"わたあめが2本だった",              apply:s=>{ s.wataame.pop(); } },
+        { id:"mask_upside",      level:3, desc:"お面が1つ逆さまだった",           apply:s=>{ s.maskUpside = 1; } },
+        { id:"lantern_kanji",    level:3, desc:"提灯の字が「祝」だった",           apply:s=>{ s.lanterns.kanji = "祝"; } },
+        { id:"awning_stripes",   level:3, desc:"屋根の縞が1本多かった",            apply:s=>{ s.stallL.stripes = 9; } },
+        { id:"balloon_extra",    level:3, desc:"風船が4つあった",                  apply:s=>{ s.balloons.push("#9fe08a"); } },
+        { id:"fish_direction",   level:3, desc:"金魚が1匹逆を向いていた",         apply:s=>{ s.fish[1].f = 1; } },
+        { id:"bachi_one",        level:3, desc:"太鼓のバチが1本だった",            apply:s=>{ s.taiko.bachi = 1; } },
+        { id:"moon_crescent",    level:3, desc:"月が三日月だった",                 apply:s=>{ s.moon.full = false; } },
+        { id:"exit_number",      level:3, desc:"出口の番号が違っていた",           apply:s=>{ s.exitSign.n = (s.exitSign.n + 3) % 10; } },
+        { id:"star_two",         level:3, desc:"一番星が2つあった",                apply:s=>{ s.stars = 2; } },
+      ],
+    },
   ];
+  THEMES.forEach(th => { th.byId = {}; th.anomalies.forEach(a => { th.byId[a.id] = a; }); });
   let currentTheme = THEMES[0];
 
   function buildScene(round){
     const th = currentTheme;
-    return {
-      sky:{ top:th.sky.top, bottom:th.sky.bottom, night:false },
-      farShops:{ color:th.farShops },
+    const s = {
+      theme: th, themeLabel: th.label,
+      sky:{ top:th.sky.top, bottom:th.sky.bottom, night:false, clouds:th.clouds },
+      farShops:{ color:th.farShops, roof:th.farRoof },
       floor:{ color:th.floor, base:th.floorBase },
-      themeLabel:th.label,
-      wall:{ color:th.wall.color, plank:th.wall.plank, roof:th.roof, roofDark:th.roofDark },
-      noren:{ color:"#4e6fb8", text:"もち" },
-      sign:{ text:"もち屋", flip:false },
-      lanterns:[ {lit:true}, {lit:true}, {lit:true} ],
-      dango:{ colors:["#f6a0b0","#fdfaf3","#9fd69a"] },   // 三色団子は 桃・白・緑 の順
-      usu:{ steam:true },
-      poster:{ flip:false, color:"#ffd6e0" },
-      lamp:{ on:true },
-      door:{ open:false },
+      tiles:{ shift:0 }, shadowDir:1,
       exitSign:{ n:round },
-      mochi:{ count:1, x:320, size:1.35, eyeTilt:0, cheeks:true, facing:1 },
-      cat:false,
-      tiles:{ shift:0 },
-      shadowDir:1,
-      clock:{ hour:8 },
+      mochi:{ count:1, x:320, y:0, size:1.35, eyeTilt:0, eyesClosed:false, cheeks:true, facing:1, hold:th.hold, mask:false },
     };
+    th.build(s);
+    return s;
   }
-
-  /* 異変ライブラリ。level 1=明らか, 2=中間, 3=微妙。desc は画面には出さず(答えは教えない方針)、
-     debugState / anomalies 一覧での識別用。
-     追加するときは apply でシーンを書き換えるだけでよい(自動検証が「見えているか」を検査する)。 */
-  const ANOMALIES = [
-    { id:"mochi_twins",   level:1, desc:"もちが2匹いた",             apply:s=>{ s.mochi.count = 2; } },
-    { id:"lantern_out",   level:1, desc:"真ん中の提灯が消えていた",   apply:s=>{ s.lanterns[1].lit = false; } },
-    { id:"door_open",     level:1, desc:"お店の扉が開いていた",       apply:s=>{ s.door.open = true; } },
-    { id:"cat",           level:1, desc:"猫がいた",                   apply:s=>{ s.cat = true; } },
-    { id:"night",         level:1, desc:"空が夜になっていた",         apply:s=>{ s.sky.night = true; s.sky.top = "#2b2a5a"; s.sky.bottom = "#6b4f8a"; } },
-    { id:"mochi_big",     level:1, desc:"もちが大きかった",           apply:s=>{ s.mochi.size = 2.2; } },
-    { id:"dango_order",   level:2, desc:"三色団子の色の順番が違った", apply:s=>{ s.dango.colors = ["#9fd69a","#fdfaf3","#f6a0b0"]; } },
-    { id:"noren_color",   level:2, desc:"のれんの色が違った",         apply:s=>{ s.noren.color = "#c8503c"; } },
-    { id:"sign_typo",     level:3, desc:"看板が「もち家」になっていた", apply:s=>{ s.sign.text = "もち家"; } },
-    { id:"lamp_off",      level:2, desc:"街灯が消えていた",           apply:s=>{ s.lamp.on = false; } },
-    { id:"no_steam",      level:2, desc:"臼の湯気が出ていなかった",   apply:s=>{ s.usu.steam = false; } },
-    { id:"poster_color",  level:2, desc:"ポスターの色が違った",       apply:s=>{ s.poster.color = "#c4e3ff"; } },
-    { id:"lantern_extra", level:2, desc:"提灯が4つあった",            apply:s=>{ s.lanterns.push({lit:true}); } },
-    { id:"mochi_facing",  level:2, desc:"もちが逆を向いていた",       apply:s=>{ s.mochi.facing = -1; } },
-    { id:"poster_flip",   level:3, desc:"ポスターが左右反転していた", apply:s=>{ s.poster.flip = true; } },
-    { id:"mochi_eyes",    level:3, desc:"もちの目がつり上がっていた", apply:s=>{ s.mochi.eyeTilt = 1; } },
-    { id:"exit_number",   level:3, desc:"出口の番号が違っていた",     apply:s=>{ s.exitSign.n = (s.exitSign.n + 3) % 10; } },
-    { id:"tiles_shift",   level:3, desc:"床のタイルがずれていた",     apply:s=>{ s.tiles.shift = 1; } },
-    { id:"shadow",        level:3, desc:"影の向きが逆だった",         apply:s=>{ s.shadowDir = -1; } },
-    { id:"no_cheeks",     level:3, desc:"もちのほっぺが無かった",     apply:s=>{ s.mochi.cheeks = false; } },
-    { id:"clock",         level:3, desc:"時計の針がずれていた",       apply:s=>{ s.clock.hour = 5; } },
-  ];
-  const ANOMALY_BY_ID = {};
-  ANOMALIES.forEach(a => { ANOMALY_BY_ID[a.id] = a; });
 
   /* 出題: 出現率 ANOMALY_RATE。使った異変は一巡するまで再出題しない。
      round が進むほど微妙な異変(level 3)が混ざる。 */
@@ -396,11 +529,12 @@
   function pickAnomaly(round, rng){
     rng = rng || Math.random;
     if(rng() >= ANOMALY_RATE) return null;
+    const list = currentTheme.anomalies;
     const levels = allowedLevels(round);
-    let pool = ANOMALIES.filter(a => levels.includes(a.level) && !usedIds.has(a.id));
+    let pool = list.filter(a => levels.includes(a.level) && !usedIds.has(a.id));
     if(pool.length === 0){
-      ANOMALIES.filter(a => levels.includes(a.level)).forEach(a => usedIds.delete(a.id));
-      pool = ANOMALIES.filter(a => levels.includes(a.level));
+      list.filter(a => levels.includes(a.level)).forEach(a => usedIds.delete(a.id));
+      pool = list.filter(a => levels.includes(a.level));
     }
     // 高い level をやや優先(round が進んだら微妙な異変を出したい)
     const weights = pool.map(a => a.level === Math.max.apply(null, levels) ? 2 : 1);
@@ -423,7 +557,13 @@
   window.addEventListener("resize", fitCanvas);
 
   function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  function circle(x, y, r, c){ ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill(); }
+  function oval(x, y, rx, ry, c){ ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI*2); ctx.fill(); }
+  function line(x1, y1, x2, y2, c, w){ ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+  function label(str, x, y, size, c){ ctx.font = "bold " + size + "px " + FONT; ctx.fillStyle = c; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(str, x, y); }
+  function vlabel(str, x, y, size, c){ Array.from(str).forEach((ch, i) => label(ch, x, y + i*(size+2), size, c)); }
 
+  /* ---------- 全テーマ共通: 空・遠景・床・出口看板・もち ---------- */
   function drawSky(s){
     const g = ctx.createLinearGradient(0,0,0,GROUND_Y);
     g.addColorStop(0, s.sky.top); g.addColorStop(1, s.sky.bottom);
@@ -431,18 +571,16 @@
     if(s.sky.night){
       ctx.fillStyle = "rgba(255,255,255,.8)";
       for(let i=0;i<26;i++){ const x=(i*97)%VIEW_W, y=(i*53)%160+10; ctx.fillRect(x,y,2,2); }
-      ctx.fillStyle = "#fff4c8"; ctx.beginPath(); ctx.arc(560,60,18,0,Math.PI*2); ctx.fill();
-    } else {
-      ctx.fillStyle = "rgba(255,255,255,.55)";
-      [[80,60,34],[120,70,26],[420,48,30],[470,58,22]].forEach(c=>{ ctx.beginPath(); ctx.arc(c[0],c[1],c[2],0,Math.PI*2); ctx.fill(); });
+      circle(560, 60, 18, "#fff4c8");
+    } else if(s.sky.clouds){
+      [[80,60,34],[120,70,26],[420,48,30],[470,58,22]].forEach(c => circle(c[0], c[1], c[2], "rgba(255,255,255,.55)"));
     }
   }
   // 遠景は 0.5 倍のパララックス。周期 160px なので、1画面(640px)歩くと遠景は 320px = ちょうど2周期ぶん動き、
   // 隣のシーンとつなげて描いても継ぎ目が出ない(連続スクロールの前提。倍率や周期を変えるときは整数倍を保つ)
   function drawFarShops(s, cam){
     ctx.save(); ctx.translate(-cam*0.5, 0);
-    ctx.fillStyle = s.farShops.color;
-    for(let i=-2;i<8;i++){ const x=i*160+20; ctx.fillRect(x,180,120,120); ctx.fillStyle="#b08c72"; ctx.fillRect(x-6,172,132,14); ctx.fillStyle=s.farShops.color; }
+    for(let i=-2;i<8;i++){ const x=i*160+20; ctx.fillStyle = s.farShops.color; ctx.fillRect(x,180,120,120); ctx.fillStyle = s.farShops.roof; ctx.fillRect(x-6,172,132,14); }
     ctx.restore();
   }
   function drawFloor(s, cam){
@@ -457,130 +595,65 @@
     }
     ctx.fillStyle = s.floor.base; ctx.fillRect(0,GROUND_Y-4,VIEW_W,6);
   }
-  function drawShop(s, cam){
-    ctx.save(); ctx.translate(-cam, 0);
-    const x0 = 60, w = 400, top = 110;
-    ctx.fillStyle = s.wall.color; ctx.fillRect(x0, top, w, GROUND_Y-top);
-    ctx.fillStyle = s.wall.plank;
-    for(let y=top+30; y<GROUND_Y; y+=28) ctx.fillRect(x0, y, w, 4);
-    // 屋根
-    ctx.fillStyle = s.wall.roof; ctx.fillRect(x0-16, top-26, w+32, 30);
-    ctx.fillStyle = s.wall.roofDark; for(let x=x0-16; x<x0+w+16; x+=24) ctx.fillRect(x, top-26, 12, 30);
-    // 看板
-    ctx.save(); if(s.sign.flip){ ctx.translate(x0+w/2, 0); ctx.scale(-1,1); ctx.translate(-(x0+w/2),0); }
-    ctx.fillStyle = "#3b2a1e"; rr(x0+130, top-70, 140, 40, 8); ctx.fill();
-    ctx.fillStyle = "#ffe9b8"; ctx.font = "bold 30px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(s.sign.text, x0+200, top-50);
-    ctx.restore();
-    // のれん
-    const nx = x0+150, ny = top+8, nw = 120, nh = 70;
-    ctx.fillStyle = s.noren.color;
-    for(let i=0;i<3;i++){ ctx.fillRect(nx+i*40+2, ny, 36, nh); }
-    ctx.fillStyle = "#fff"; ctx.font = "bold 20px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
-    ctx.fillText(s.noren.text, nx+nw/2, ny+nh/2+2);
-    // 扉
-    const dx = x0+300, dy = top+60, dw = 62, dh = GROUND_Y-dy;
-    ctx.fillStyle = "#5a3a26"; ctx.fillRect(dx-4, dy-4, dw+8, dh+4);
-    if(s.door.open){
-      ctx.fillStyle = "#1c1410"; ctx.fillRect(dx, dy, dw, dh);
-      ctx.fillStyle = "#b98a63"; ctx.fillRect(dx-18, dy, 20, dh);
-    } else {
-      ctx.fillStyle = "#c79a6c"; ctx.fillRect(dx, dy, dw, dh);
-      ctx.strokeStyle = "#8f6a48"; ctx.lineWidth = 2; ctx.strokeRect(dx+8, dy+10, dw-16, dh-20);
-      ctx.fillStyle = "#3b2a1e"; ctx.beginPath(); ctx.arc(dx+dw-14, dy+dh/2, 3, 0, Math.PI*2); ctx.fill();
-    }
-    // ポスター
-    ctx.save();
-    const px = x0+30, py = top+50, pw = 70, ph = 90;
-    if(s.poster.flip){ ctx.translate(px+pw/2, 0); ctx.scale(-1,1); ctx.translate(-(px+pw/2),0); }
-    ctx.fillStyle = s.poster.color; ctx.fillRect(px, py, pw, ph);
-    ctx.strokeStyle = "#a88"; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
-    ctx.fillStyle = "#e0607a"; ctx.beginPath(); ctx.arc(px+22, py+34, 12, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = "#5b8a5e"; ctx.fillRect(px+40, py+22, 20, 24);
-    ctx.fillStyle = "#3b2a1e"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "left";
-    ctx.fillText("新作", px+8, py+70);
-    ctx.restore();
-    // 時計
-    const cx = x0+w-60, cy = top+30;
-    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = "#3b2a1e"; ctx.lineWidth = 2; ctx.stroke();
-    const ang = (s.clock.hour/12)*Math.PI*2 - Math.PI/2;
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineWidth = 4; ctx.lineTo(cx+Math.cos(ang)*15, cy+Math.sin(ang)*15); ctx.stroke();
-    ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy-18); ctx.stroke();
-    ctx.restore();
-  }
-  function drawLanterns(s, cam){
-    ctx.save(); ctx.translate(-cam, 0);
-    const n = s.lanterns.length, x0 = 90, gap = n > 3 ? 80 : 110;
-    ctx.strokeStyle = "#6b4a35"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(40, 12); ctx.lineTo(480, 12); ctx.stroke();
-    s.lanterns.forEach((l, i) => {
-      const x = x0 + i*gap, y = 30;
-      ctx.strokeStyle = "#3b2a1e"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, 12); ctx.lineTo(x, y-14); ctx.stroke();
-      if(l.lit){ ctx.fillStyle = "rgba(255,190,90,.28)"; ctx.beginPath(); ctx.arc(x, y+4, 26, 0, Math.PI*2); ctx.fill(); }
-      ctx.fillStyle = l.lit ? "#ff8a5c" : "#8a5a4a";
-      ctx.beginPath(); ctx.ellipse(x, y+4, 12, 17, 0, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = 1;
-      for(let k=-8;k<=8;k+=8){ ctx.beginPath(); ctx.moveTo(x-11, y+4+k); ctx.lineTo(x+11, y+4+k); ctx.stroke(); }
-      ctx.fillStyle = "#3b2a1e"; ctx.fillRect(x-6, y-14, 12, 5); ctx.fillRect(x-6, y+19, 12, 5);
-    });
-    ctx.restore();
-  }
-  function drawStand(s, cam){
-    ctx.save(); ctx.translate(-cam, 0);
-    // 団子の台
-    const x = 175, y = GROUND_Y-70;
-    ctx.fillStyle = "#8c5a3c"; ctx.fillRect(x, y, 110, 8); ctx.fillRect(x+6, y+8, 8, 62); ctx.fillRect(x+96, y+8, 8, 62);
-    ctx.fillStyle = "#fff8e8"; ctx.beginPath(); ctx.ellipse(x+55, y-4, 44, 9, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = "#8c5a3c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x+14, y-8); ctx.lineTo(x+98, y-8); ctx.stroke();
-    s.dango.colors.forEach((c, i) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x+30+i*26, y-10, 11, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,.12)"; ctx.lineWidth = 1; ctx.stroke(); });
-    // 臼と杵
-    const ux = 520, uy = GROUND_Y;
-    ctx.fillStyle = "#a9754f"; rr(ux-34, uy-58, 68, 58, 10); ctx.fill();
-    ctx.fillStyle = "#c98f63"; ctx.beginPath(); ctx.ellipse(ux, uy-58, 34, 9, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = "#fdfaf3"; ctx.beginPath(); ctx.ellipse(ux, uy-58, 24, 6, 0, 0, Math.PI*2); ctx.fill();
-    ctx.save(); ctx.translate(ux+20, uy-70); ctx.rotate(-0.6);
-    ctx.fillStyle = "#c98f63"; ctx.fillRect(-4, -60, 8, 60); ctx.fillStyle = "#a9754f"; rr(-14, -84, 28, 28, 6); ctx.fill(); ctx.restore();
-    if(s.usu.steam){
-      ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 3;
-      for(let k=0;k<3;k++){ ctx.beginPath(); ctx.moveTo(ux-14+k*14, uy-66); ctx.quadraticCurveTo(ux-6+k*14, uy-84, ux-14+k*14, uy-100); ctx.stroke(); }
-    }
-    ctx.restore();
-  }
-  function drawLamp(s, cam){
-    ctx.save(); ctx.translate(-cam, 0);
-    const x = 600;
-    ctx.fillStyle = "#3b3f4a"; ctx.fillRect(x-4, 90, 8, GROUND_Y-90); ctx.fillRect(x-14, GROUND_Y-8, 28, 8);
-    ctx.fillStyle = "#3b3f4a"; rr(x-14, 70, 28, 26, 6); ctx.fill();
-    ctx.fillStyle = s.lamp.on ? "#ffe9a0" : "#6d6a5a"; rr(x-10, 74, 20, 18, 4); ctx.fill();
-    if(s.lamp.on){ ctx.fillStyle = "rgba(255,235,160,.18)"; ctx.beginPath(); ctx.moveTo(x-12, 92); ctx.lineTo(x+12, 92); ctx.lineTo(x+70, GROUND_Y); ctx.lineTo(x-70, GROUND_Y); ctx.closePath(); ctx.fill(); }
-    ctx.restore();
-  }
   function drawExitSign(s, cam){
     ctx.save(); ctx.translate(-cam, 0);
     const x = 480, y = 44;
     ctx.fillStyle = "#1f8a4c"; rr(x, y, 110, 40, 6); ctx.fill();
-    ctx.fillStyle = "#fff"; ctx.font = "bold 24px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("出口 " + s.exitSign.n, x+55, y+21);
+    label("出口 " + s.exitSign.n, x+55, y+21, 24, "#fff");
     ctx.fillStyle = "#3b3f4a"; ctx.fillRect(x+52, y+40, 6, 30);
     ctx.restore();
   }
+  // もちが持っている物(進行方向側)。左右対称だと「逆を向く」異変が見えないため、必ず片手に何か持たせる
+  function drawHeld(m){
+    if(m.hold === "dango"){
+      line(14, 8, 30, -14, "#8c5a3c", 2);
+      [[26,-9,"#f6a0b0"],[22,-3,"#fdfaf3"],[18,3,"#9fd69a"]].forEach(d => circle(d[0], d[1], 4.2, d[2]));
+    } else if(m.hold === "cup"){
+      ctx.fillStyle = "#6f9a5a"; rr(16, -10, 13, 13, 3); ctx.fill();
+      ctx.fillStyle = "#4f7a3e"; ctx.fillRect(16, -10, 13, 3);
+    } else if(m.hold === "goldfish"){
+      line(14, 6, 22, -16, "#c8322e", 1.5);
+      oval(24, -5, 8, 10, "rgba(170,220,255,.85)");
+      oval(24, -3, 4, 2.6, "#ff6a2a");
+      ctx.fillStyle = "#ff6a2a"; ctx.beginPath(); ctx.moveTo(21,-3); ctx.lineTo(17,-6); ctx.lineTo(17,0); ctx.closePath(); ctx.fill();
+    } else if(m.hold === "balloon"){
+      line(14, 6, 20, -26, "#8a8a8a", 1.2);
+      circle(20, -36, 11, "#ff6b8a"); circle(16, -40, 3, "rgba(255,255,255,.6)");
+    }
+  }
+  function drawFoxMask(){
+    ctx.fillStyle = "#fbf7f0";
+    ctx.beginPath(); ctx.moveTo(-14,-8); ctx.lineTo(-11,-22); ctx.lineTo(-4,-12); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(14,-8); ctx.lineTo(11,-22); ctx.lineTo(4,-12); ctx.closePath(); ctx.fill();
+    oval(0, 0, 16, 14, "#fbf7f0");
+    ctx.strokeStyle = "#c9b9a0"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, 0, 16, 14, 0, 0, Math.PI*2); ctx.stroke();
+    oval(-7, -6, 4, 1.8, "#d8392f"); oval(7, -6, 4, 1.8, "#d8392f");
+    line(-10, -1, -4, 1, "#2a2a2a", 2); line(10, -1, 4, 1, "#2a2a2a", 2);
+    circle(0, 7, 2.2, "#d8392f");
+  }
   function drawMochi(x, y, m, s){
     ctx.save(); ctx.translate(x, y); ctx.scale(m.facing*m.size, m.size);
-    ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(6*s.shadowDir*m.facing, 20, 22, 6, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = "#fdfaf3"; ctx.beginPath(); ctx.ellipse(0, 4, 19, 17, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = "#d8c9a8"; ctx.lineWidth = 1.4; ctx.stroke();
-    if(m.cheeks){ ctx.fillStyle = "#ffb0b8"; ctx.beginPath(); ctx.ellipse(-9, 6, 4.2, 3, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(9, 6, 4.2, 3, 0, 0, Math.PI*2); ctx.fill(); }
-    // 持っている団子串(進行方向側)。左右対称だと「逆を向く」異変が見えないため
-    ctx.strokeStyle = "#8c5a3c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(14, 8); ctx.lineTo(30, -14); ctx.stroke();
-    [[26,-9,"#f6a0b0"],[22,-3,"#fdfaf3"],[18,3,"#9fd69a"]].forEach(d=>{ ctx.fillStyle = d[2]; ctx.beginPath(); ctx.arc(d[0], d[1], 4.2, 0, Math.PI*2); ctx.fill(); });
-    ctx.fillStyle = "#2a2a2a";
-    if(m.eyeTilt){
-      ctx.strokeStyle = "#2a2a2a"; ctx.lineWidth = 2.4; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(-11,-4); ctx.lineTo(-3,1); ctx.moveTo(11,-4); ctx.lineTo(3,1); ctx.stroke();
+    oval(6*s.shadowDir*m.facing, 20, 22, 6, "rgba(0,0,0,.18)");
+    oval(0, 4, 19, 17, "#fdfaf3");
+    ctx.strokeStyle = "#d8c9a8"; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(0, 4, 19, 17, 0, 0, Math.PI*2); ctx.stroke();
+    if(m.cheeks){ oval(-9, 6, 4.2, 3, "#ffb0b8"); oval(9, 6, 4.2, 3, "#ffb0b8"); }
+    drawHeld(m);
+    if(m.eyesClosed){
+      ctx.strokeStyle = "#2a2a2a"; ctx.lineWidth = 2.6; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.arc(-7, -3, 4, 0.2*Math.PI, 0.8*Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.arc(7, -3, 4, 0.2*Math.PI, 0.8*Math.PI); ctx.stroke();
+    } else if(m.eyeTilt){
+      line(-11, -4, -3, 1, "#2a2a2a", 2.4); line(11, -4, 3, 1, "#2a2a2a", 2.4);
     } else {
-      ctx.beginPath(); ctx.arc(-7,-1,2.6,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(7,-1,2.6,0,Math.PI*2); ctx.fill();
+      circle(-7, -1, 2.6, "#2a2a2a"); circle(7, -1, 2.6, "#2a2a2a");
     }
+    if(m.mask) drawFoxMask();
+    ctx.restore();
+  }
+  function drawMochis(s, cam, t){
+    ctx.save(); ctx.translate(-cam, 0);
+    const bob = Math.sin(t/220) * 1.5;
+    for(let i=0;i<s.mochi.count;i++) drawMochi(s.mochi.x + i*56, GROUND_Y-22+bob+s.mochi.y, s.mochi, s);
     ctx.restore();
   }
   function drawCat(x, y){
@@ -591,35 +664,352 @@
     ctx.beginPath(); ctx.moveTo(-23,-13); ctx.lineTo(-21,-24); ctx.lineTo(-15,-15); ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-9,-13); ctx.lineTo(-11,-24); ctx.lineTo(-17,-15); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(16,-2); ctx.quadraticCurveTo(30,-6,26,-20); ctx.stroke();
-    ctx.fillStyle = "#ffd34e"; ctx.beginPath(); ctx.arc(-19,-9,1.6,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(-13,-9,1.6,0,Math.PI*2); ctx.fill();
+    circle(-19, -9, 1.6, "#ffd34e"); circle(-13, -9, 1.6, "#ffd34e");
     ctx.restore();
   }
-  function drawActors(s, cam, t){
+
+  /* ---------- 夕焼けのもち屋 ---------- */
+  function drawShop(s, cam){
     ctx.save(); ctx.translate(-cam, 0);
-    const bob = Math.sin(t/220) * 1.5;
-    for(let i=0;i<s.mochi.count;i++) drawMochi(s.mochi.x + i*56, GROUND_Y-22+bob, s.mochi, s);
-    if(s.cat) drawCat(455, GROUND_Y-8);
+    const x0 = 60, w = 400, top = 110;
+    ctx.fillStyle = s.wall.color; ctx.fillRect(x0, top, w, GROUND_Y-top);
+    ctx.fillStyle = s.wall.plank;
+    for(let y=top+30; y<GROUND_Y; y+=28) ctx.fillRect(x0, y, w, 4);
+    ctx.fillStyle = s.wall.roof; ctx.fillRect(x0-16, top-26, w+32, 30);
+    ctx.fillStyle = s.wall.roofDark; for(let x=x0-16; x<x0+w+16; x+=24) ctx.fillRect(x, top-26, 12, 30);
+    // 看板
+    ctx.save(); if(s.sign.flip){ ctx.translate(x0+w/2, 0); ctx.scale(-1,1); ctx.translate(-(x0+w/2),0); }
+    ctx.fillStyle = "#3b2a1e"; rr(x0+130, top-70, 140, 40, 8); ctx.fill();
+    label(s.sign.text, x0+200, top-50, 30, "#ffe9b8");
+    ctx.restore();
+    if(s.crow){
+      const cx = x0+195, cy = top-78;
+      oval(cx, cy, 13, 8, "#1e1e24"); circle(cx+11, cy-7, 6, "#1e1e24");
+      ctx.fillStyle = "#e0a13a"; ctx.beginPath(); ctx.moveTo(cx+16,cy-8); ctx.lineTo(cx+24,cy-6); ctx.lineTo(cx+16,cy-4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#1e1e24"; ctx.beginPath(); ctx.moveTo(cx-10,cy-2); ctx.lineTo(cx-24,cy+2); ctx.lineTo(cx-10,cy+5); ctx.closePath(); ctx.fill();
+      line(cx-2, cy+7, cx-2, cy+10, "#3b2a1e", 2); line(cx+4, cy+7, cx+4, cy+10, "#3b2a1e", 2);
+    }
+    // のれん
+    if(s.noren.show){
+      const nx = x0+150, ny = top+8, nw = 120, nh = 70;
+      ctx.fillStyle = s.noren.color;
+      for(let i=0;i<3;i++){ ctx.fillRect(nx+i*40+2, ny, 36, nh); }
+      label(s.noren.text, nx+nw/2, ny+nh/2+2, 20, "#fff");
+    }
+    // 扉
+    const dx = x0+300, dy = top+60, dw = 62, dh = GROUND_Y-dy;
+    ctx.fillStyle = "#5a3a26"; ctx.fillRect(dx-4, dy-4, dw+8, dh+4);
+    if(s.door.open){
+      ctx.fillStyle = "#1c1410"; ctx.fillRect(dx, dy, dw, dh);
+      ctx.fillStyle = "#b98a63"; ctx.fillRect(dx-18, dy, 20, dh);
+    } else {
+      ctx.fillStyle = "#c79a6c"; ctx.fillRect(dx, dy, dw, dh);
+      ctx.strokeStyle = "#8f6a48"; ctx.lineWidth = 2; ctx.strokeRect(dx+8, dy+10, dw-16, dh-20);
+      circle(s.door.knobLeft ? dx+14 : dx+dw-14, dy+dh/2, 4.5, "#3b2a1e");
+    }
+    // ポスター
+    ctx.save();
+    const px = x0+30, py = top+50, pw = 70, ph = 90;
+    if(s.poster.flip){ ctx.translate(px+pw/2, 0); ctx.scale(-1,1); ctx.translate(-(px+pw/2),0); }
+    ctx.fillStyle = s.poster.color; ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = "#a88"; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
+    circle(px+22, py+34, 12, "#e0607a");
+    ctx.fillStyle = "#5b8a5e"; ctx.fillRect(px+40, py+22, 20, 24);
+    ctx.fillStyle = "#3b2a1e"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("新作", px+8, py+70);
+    ctx.restore();
+    // 時計
+    const cx = x0+w-60, cy = top+30;
+    circle(cx, cy, 22, "#fff");
+    ctx.strokeStyle = "#3b2a1e"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2); ctx.stroke();
+    const ang = (s.clock.hour/12)*Math.PI*2 - Math.PI/2;
+    line(cx, cy, cx+Math.cos(ang)*15, cy+Math.sin(ang)*15, "#3b2a1e", 4);
+    line(cx, cy, cx, cy-18, "#3b2a1e", 2);
     ctx.restore();
   }
-  function drawThemeLabel(s){
-    // 右上に小さく表示するだけの飾り。空の色に関わらず読めるよう、常に暗いチップ+明るい文字にする
-    ctx.font = "11px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
-    ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    const w = ctx.measureText(s.themeLabel).width + 16;
-    ctx.fillStyle = "rgba(20,14,10,.4)";
-    const rx = VIEW_W - 10 - w, ry = 8, rh = 18;
-    ctx.beginPath(); ctx.moveTo(rx+6,ry); ctx.arcTo(rx+w,ry,rx+w,ry+rh,6); ctx.arcTo(rx+w,ry+rh,rx,ry+rh,6);
-    ctx.arcTo(rx,ry+rh,rx,ry,6); ctx.arcTo(rx,ry,rx+w,ry,6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "rgba(255,248,236,.9)";
-    ctx.fillText(s.themeLabel, VIEW_W - 18, ry + rh/2 + 1);
+  function drawLanterns(s, cam){
+    ctx.save(); ctx.translate(-cam, 0);
+    const n = s.lanterns.length, x0 = 90, gap = n > 3 ? 80 : 110;
+    line(40, 12, 440, 12, "#6b4a35", 2);   // 右上はテーマ名・発見数のチップを置くので空けておく
+    s.lanterns.forEach((l, i) => {
+      const x = x0 + i*gap, y = 30;
+      line(x, 12, x, y-14, "#3b2a1e", 2);
+      if(l.lit) circle(x, y+4, 26, "rgba(255,190,90,.28)");
+      oval(x, y+4, 12, 17, l.lit ? l.color : "#8a5a4a");
+      for(let k=-8;k<=8;k+=8) line(x-11, y+4+k, x+11, y+4+k, "rgba(0,0,0,.25)", 1);
+      ctx.fillStyle = "#3b2a1e"; ctx.fillRect(x-6, y-14, 12, 5); ctx.fillRect(x-6, y+19, 12, 5);
+    });
+    ctx.restore();
+  }
+  function drawStand(s, cam){
+    ctx.save(); ctx.translate(-cam, 0);
+    const x = 175, y = GROUND_Y-70;
+    ctx.fillStyle = "#8c5a3c"; ctx.fillRect(x, y, 110, 8); ctx.fillRect(x+6, y+8, 8, 62); ctx.fillRect(x+96, y+8, 8, 62);
+    oval(x+55, y-4, 44, 9, "#fff8e8");
+    line(x+14, y-8, x+98, y-8, "#8c5a3c", 3);
+    s.dango.colors.forEach((c, i) => { circle(x+30+i*26, y-10, 11, c); ctx.strokeStyle = "rgba(0,0,0,.12)"; ctx.lineWidth = 1; ctx.stroke(); });
+    if(s.usu.show){
+      const ux = 520, uy = GROUND_Y;
+      ctx.fillStyle = "#a9754f"; rr(ux-34, uy-58, 68, 58, 10); ctx.fill();
+      oval(ux, uy-58, 34, 9, "#c98f63"); oval(ux, uy-58, 24, 6, "#fdfaf3");
+      ctx.save(); ctx.translate(ux+20, uy-70); ctx.rotate(-0.6);
+      ctx.fillStyle = "#c98f63"; ctx.fillRect(-4, -60, 8, 60); ctx.fillStyle = "#a9754f"; rr(-14, -84, 28, 28, 6); ctx.fill(); ctx.restore();
+      if(s.usu.steam){
+        ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 3;
+        for(let k=0;k<3;k++){ ctx.beginPath(); ctx.moveTo(ux-14+k*14, uy-66); ctx.quadraticCurveTo(ux-6+k*14, uy-84, ux-14+k*14, uy-100); ctx.stroke(); }
+      }
+    }
+    ctx.restore();
+  }
+  function drawLamp(s, cam){
+    ctx.save(); ctx.translate(-cam, 0);
+    const x = 600;
+    ctx.fillStyle = "#3b3f4a"; ctx.fillRect(x-4, 90, 8, GROUND_Y-90); ctx.fillRect(x-14, GROUND_Y-8, 28, 8);
+    rr(x-14, 70, 28, 26, 6); ctx.fill();
+    ctx.fillStyle = s.lamp.on ? s.lamp.color : "#6d6a5a"; rr(x-10, 74, 20, 18, 4); ctx.fill();
+    if(s.lamp.on){ ctx.fillStyle = "rgba(255,235,160,.18)"; ctx.beginPath(); ctx.moveTo(x-12, 92); ctx.lineTo(x+12, 92); ctx.lineTo(x+70, GROUND_Y); ctx.lineTo(x-70, GROUND_Y); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+  }
+
+  /* ---------- 朝の茶屋 ---------- */
+  function drawSparrow(x, y, f){
+    ctx.save(); ctx.translate(x, y); ctx.scale(f, 1);
+    ctx.fillStyle = "#6b4028"; ctx.beginPath(); ctx.moveTo(-8,-2); ctx.lineTo(-19,-6); ctx.lineTo(-17,2); ctx.closePath(); ctx.fill();
+    oval(0, 0, 10, 7, "#8a5a3a");
+    circle(8, -6, 6, "#6b4028"); circle(10, -4, 2.4, "#f3e6d0"); circle(10, -7, 1.3, "#1e1e1e");
+    ctx.fillStyle = "#e8a13a"; ctx.beginPath(); ctx.moveTo(13,-7); ctx.lineTo(19,-5); ctx.lineTo(13,-3); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  function drawTeaHouse(s, cam){
+    // 太陽(空に固定)
+    if(s.sun === "sun"){ circle(80, 56, 34, "rgba(255,240,170,.35)"); circle(80, 56, 22, "#fff1a8"); }
+    else { circle(80, 56, 22, "#b8b8c8"); circle(73, 50, 5, "rgba(120,120,140,.5)"); circle(88, 62, 4, "rgba(120,120,140,.5)"); }
+    ctx.save(); ctx.translate(-cam, 0);
+    // 竹垣と朝顔(建物の右)
+    if(s.fence.show){
+      for(let i=0;i<9;i++){
+        const x = 474 + i*18;
+        ctx.save();
+        if(s.fence.tilt && i === 4){ ctx.translate(x+4, GROUND_Y); ctx.rotate(0.28); ctx.translate(-(x+4), -GROUND_Y); }
+        ctx.fillStyle = "#7fae5a"; ctx.fillRect(x, 196, 9, 104);
+        ctx.fillStyle = "#5f8c40"; ctx.fillRect(x, 226, 9, 3); ctx.fillRect(x, 262, 9, 3);
+        ctx.restore();
+      }
+      ctx.fillStyle = "#6d4a2e"; ctx.fillRect(468, 214, 158, 6); ctx.fillRect(468, 268, 158, 6);
+    }
+    line(520, 272, 520, 200, "#5f8c40", 2.5);
+    ctx.strokeStyle = "#5f8c40"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(520,268); ctx.quadraticCurveTo(540,240,520,220); ctx.quadraticCurveTo(500,205,520,200); ctx.stroke();
+    s.asagao.forEach((c, i) => { const p = [[505,222],[536,238],[508,254],[536,206]][i]; circle(p[0], p[1], 10, c); circle(p[0], p[1], 3.5, "#fffbe8"); });
+    ctx.fillStyle = "#9a5a3a"; ctx.beginPath(); ctx.moveTo(504,272); ctx.lineTo(536,272); ctx.lineTo(532,GROUND_Y); ctx.lineTo(508,GROUND_Y); ctx.closePath(); ctx.fill();
+    // 建物
+    const x0 = 40, x1 = 460, top = 132;
+    ctx.fillStyle = "#f3e7cf"; ctx.fillRect(x0, top, x1-x0, GROUND_Y-top);
+    ctx.fillStyle = "#7a5236"; ctx.fillRect(x0, top, 8, GROUND_Y-top); ctx.fillRect(x1-8, top, 8, GROUND_Y-top); ctx.fillRect(x0, top, x1-x0, 6);
+    // 瓦屋根
+    ctx.fillStyle = s.roof.color; ctx.beginPath(); ctx.moveTo(x0-24, top+2); ctx.lineTo(x1+24, top+2); ctx.lineTo(x1-10, top-34); ctx.lineTo(x0+10, top-34); ctx.closePath(); ctx.fill();
+    for(let x=x0; x<x1; x+=16) line(x+4, top-32, x, top, "rgba(0,0,0,.22)", 1.5);
+    ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(x0+10, top-38, x1-x0-20, 5);
+    // 屋根の上の看板
+    ctx.fillStyle = "#5a3a26"; ctx.fillRect(200, 88, 6, 10); ctx.fillRect(274, 88, 6, 10);
+    ctx.fillStyle = s.sign.bg; rr(170, 52, 140, 38, 6); ctx.fill();
+    label(s.sign.text, 240, 72, 26, "#fff3d6");
+    for(let i=0;i<s.sparrows.count;i++) drawSparrow(90 + i*34, 88, s.sparrows.facing);
+    if(s.catRoof) drawCat(410, 86);
+    // 風鈴
+    if(s.furin.show){
+      line(432, 134, 432, 146, "#5a3a26", 1.2);
+      ctx.fillStyle = "rgba(150,210,240,.95)"; ctx.beginPath(); ctx.arc(432, 155, 10, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = s.furin.tanzaku; ctx.fillRect(427, 157, 10, 40);
+    }
+    // 障子
+    if(s.shoji.open){
+      ctx.fillStyle = "#241a12"; ctx.fillRect(60, 152, 110, 84);
+      ctx.fillStyle = "#fbf7ec"; ctx.fillRect(60, 152, 26, 84);
+    } else {
+      ctx.fillStyle = "#fbf7ec"; ctx.fillRect(60, 152, 110, 84);
+      for(let k=1;k<4;k++){ line(60+k*27.5, 152, 60+k*27.5, 236, "#8a6440", 2); line(60, 152+k*21, 170, 152+k*21, "#8a6440", 2); }
+      if(s.shoji.hole) circle(100, 184, 7, "#241a12");
+    }
+    ctx.strokeStyle = "#8a6440"; ctx.lineWidth = 3; ctx.strokeRect(60, 152, 110, 84);
+    // お品書きの札
+    s.menu.forEach((m, i) => {
+      const x = 252 + i*34, h = Array.from(m).length*17 + 12;
+      line(x+13, 140, x+13, 148, "#5a3a26", 1.5);
+      ctx.fillStyle = "#e8c998"; rr(x, 148, 26, h, 3); ctx.fill();
+      ctx.strokeStyle = "#9a7448"; ctx.lineWidth = 1.5; ctx.stroke();
+      vlabel(m, x+13, 158, 15, "#3b2a1e");
+    });
+    // 格子戸
+    ctx.fillStyle = "#6d4a2e"; ctx.fillRect(360, 166, 82, GROUND_Y-166);
+    ctx.fillStyle = "#c9a877"; ctx.fillRect(366, 172, 70, GROUND_Y-172);
+    for(let x=376; x<436; x+=10) line(x, 172, x, GROUND_Y, "#6d4a2e", 2);
+    for(let y=194; y<GROUND_Y; y+=22) line(366, y, 436, y, "#6d4a2e", 2);
+    // 縁台と野点傘
+    ctx.fillStyle = "#5a3a26"; ctx.fillRect(66, 262, 8, 38); ctx.fillRect(228, 262, 8, 38);
+    ctx.fillStyle = "#7a5236"; ctx.fillRect(150-2.5, 136, 5, 118);
+    ctx.fillStyle = s.bench.color; ctx.fillRect(58, 252, 186, 10); ctx.fillRect(62, 262, 178, 12);
+    ctx.fillStyle = "rgba(0,0,0,.12)"; ctx.fillRect(62, 262, 178, 12);
+    if(s.umbrella.open){
+      ctx.fillStyle = s.umbrella.color; ctx.beginPath(); ctx.ellipse(150, 150, 96, 40, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
+      for(let k=1;k<8;k++) line(150, 112, 54 + k*24, 150, "rgba(0,0,0,.18)", 1.5);
+    } else {
+      ctx.fillStyle = s.umbrella.color; ctx.beginPath(); ctx.moveTo(150,110); ctx.lineTo(158,128); ctx.lineTo(156,190); ctx.lineTo(144,190); ctx.lineTo(142,128); ctx.closePath(); ctx.fill();
+    }
+    circle(150, 110, 4, "#7a5236");
+    // 湯呑とおはぎ
+    s.cups.forEach((c, i) => {
+      const x = 84 + i*32;
+      ctx.fillStyle = c; rr(x, 238, 16, 15, 3); ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(x, 238, 16, 3);
+      if(s.cupSteam){ ctx.strokeStyle = "rgba(140,130,120,.6)"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x+8, 234); ctx.quadraticCurveTo(x+14, 222, x+8, 210); ctx.stroke(); }
+    });
+    oval(205, 252, 28, 5, "#fffaf0");
+    for(let k=0;k<s.ohagi;k++){ const x = [188,205,222][k]; oval(x, 245, 9, 7, "#5a3140"); circle(x-3, 242, 2, "rgba(255,255,255,.25)"); }
+    ctx.restore();
+  }
+  function drawRain(){
+    ctx.fillStyle = "rgba(70,80,100,.22)"; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    for(let i=0;i<70;i++){ const x = (i*53)%VIEW_W, y = (i*97)%VIEW_H; line(x, y, x-6, y+18, "rgba(230,240,255,.7)", 1.5); }
+  }
+
+  /* ---------- たそがれの縁日 ---------- */
+  function drawStar(x, y, r, c){
+    ctx.fillStyle = c; ctx.beginPath();
+    for(let k=0;k<10;k++){ const a = -Math.PI/2 + k*Math.PI/5, rad = k%2 ? r*0.45 : r; ctx.lineTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad); }
+    ctx.closePath(); ctx.fill();
+  }
+  function drawFirework(x, y){
+    const cols = ["#ffe36b","#ff7aa8","#8fd8ff"];
+    for(let k=0;k<16;k++){ const a = k*Math.PI/8; line(x+Math.cos(a)*8, y+Math.sin(a)*8, x+Math.cos(a)*36, y+Math.sin(a)*36, cols[k%3], 3); }
+    circle(x, y, 4, "#fff6c0");
+  }
+  function drawMask(type, x, y, upside){
+    ctx.save(); ctx.translate(x, y); if(upside) ctx.rotate(Math.PI);
+    if(type === "fox"){
+      ctx.fillStyle = "#fbf7f0";
+      ctx.beginPath(); ctx.moveTo(-14,-6); ctx.lineTo(-10,-22); ctx.lineTo(-3,-12); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(14,-6); ctx.lineTo(10,-22); ctx.lineTo(3,-12); ctx.closePath(); ctx.fill();
+      oval(0, 0, 15, 17, "#fbf7f0");
+      oval(-7, -7, 4, 2, "#d8392f"); oval(7, -7, 4, 2, "#d8392f");
+      line(-10, -1, -4, 1, "#2a2a2a", 2); line(10, -1, 4, 1, "#2a2a2a", 2);
+      circle(0, 9, 2.4, "#d8392f");
+    } else if(type === "oni"){
+      ctx.fillStyle = "#f2d04a";
+      ctx.beginPath(); ctx.moveTo(-12,-12); ctx.lineTo(-8,-26); ctx.lineTo(-4,-14); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(12,-12); ctx.lineTo(8,-26); ctx.lineTo(4,-14); ctx.closePath(); ctx.fill();
+      circle(0, 0, 17, "#d8453a");
+      circle(-6, -3, 4, "#f2d04a"); circle(6, -3, 4, "#f2d04a"); circle(-6, -3, 1.8, "#1e1e1e"); circle(6, -3, 1.8, "#1e1e1e");
+      ctx.fillStyle = "#fff"; ctx.fillRect(-7, 7, 14, 4);
+    } else {
+      circle(0, 0, 17, "#f2d6a2");
+      circle(-6, -4, 3.6, "#1e1e1e"); circle(6, -5, 2, "#1e1e1e");
+      circle(5, 9, 4, "#d8453a"); circle(5, 9, 1.6, "#6a2a22");
+      oval(-9, 5, 3.5, 2.4, "#f0a0a0");
+    }
+    ctx.restore();
+  }
+  function drawAwning(x, y, w, n, c){
+    const sw = w / n;
+    for(let i=0;i<n;i++){
+      const col = i % 2 ? "#fbf5ea" : c;
+      ctx.fillStyle = col; ctx.fillRect(x + i*sw, y, sw + 0.6, 34);
+      ctx.beginPath(); ctx.ellipse(x + i*sw + sw/2, y+34, sw/2, 6, 0, 0, Math.PI); ctx.fill();
+    }
+  }
+  function drawFestival(s, cam){
+    // 空(固定): 花火・月・一番星
+    if(s.fireworks) drawFirework(505, 172);
+    if(s.moon.full) circle(600, 168, s.moon.r, "#fff4c8");
+    else {
+      const r = s.moon.r; ctx.fillStyle = "#fff4c8"; ctx.beginPath();
+      ctx.arc(600, 168, r, -Math.PI/2, Math.PI/2, false); ctx.ellipse(600, 168, r*0.45, r, 0, Math.PI/2, -Math.PI/2, true); ctx.fill();
+    }
+    [[612,112],[478,140]].slice(0, s.stars).forEach(p => drawStar(p[0], p[1], 11, "#fff6c0"));
+    ctx.save(); ctx.translate(-cam, 0);
+    // 提灯の列(右上はチップ用に空ける)
+    line(16, 16, 440, 16, "#3b2a1e", 2);
+    s.lanterns.pattern.forEach((p, i) => {
+      const x = 50 + i*90, y = 40;
+      line(x, 16, x, y-15, "#3b2a1e", 1.5);
+      const red = p === "r";
+      if(s.lanterns.lit) circle(x, y, 24, "rgba(255,190,90,.3)");
+      oval(x, y, 12, 15, s.lanterns.lit ? (red ? "#e0443a" : "#fbf3e6") : (red ? "#6a3a34" : "#8a8278"));
+      ctx.fillStyle = "#2a1e16"; ctx.fillRect(x-6, y-17, 12, 4); ctx.fillRect(x-6, y+13, 12, 4);
+      label(s.lanterns.kanji, x, y+1, 13, red ? "#fff" : "#c8322e");
+    });
+    // 左の屋台: 金魚すくい
+    const L = s.stallL;
+    ctx.fillStyle = "#34405e"; ctx.fillRect(48, 150, 204, 100);
+    ctx.fillStyle = "#6d4a2e"; ctx.fillRect(44, 120, 8, 180); ctx.fillRect(248, 120, 8, 180);
+    ctx.fillStyle = "#fff4dc"; rr(70, 78, 160, 30, 5); ctx.fill(); ctx.strokeStyle = "#c8322e"; ctx.lineWidth = 2; ctx.stroke();
+    label(L.sign, 150, 94, 22, "#c8322e");
+    drawAwning(40, 112, 220, L.stripes, L.awning);
+    if(s.poi) for(let k=0;k<3;k++){ const x = 72 + k*22; line(x, 210, x, 236, "#e0c080", 3); circle(x, 200, 10, "#fdfaf3"); ctx.strokeStyle = "#d8392f"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, 200, 10, 0, Math.PI*2); ctx.stroke(); }
+    s.balloons.forEach((c, i) => {
+      const p = [[192,182],[216,170],[240,184],[216,204]][i];
+      line(p[0], p[1]+12, 214, 238, "rgba(230,230,230,.8)", 1);
+      circle(p[0], p[1], 12, c); circle(p[0]-4, p[1]-4, 3, "rgba(255,255,255,.55)");
+    });
+    ctx.fillStyle = "#8a5a3c"; ctx.fillRect(48, 250, 204, 50);
+    for(let y=262; y<GROUND_Y; y+=14) line(48, y, 252, y, "rgba(0,0,0,.18)", 1.5);
+    oval(150, 250, 84, 20, "#2f7fb3"); oval(150, 250, 78, 16, "#5ab6e6");
+    s.fish.forEach(f => {
+      ctx.save(); ctx.translate(f.x, f.y); ctx.scale(f.f*f.sc, f.sc);
+      oval(0, 0, 11, 6, f.c);
+      ctx.fillStyle = f.c; ctx.beginPath(); ctx.moveTo(-9,0); ctx.lineTo(-18,-7); ctx.lineTo(-18,7); ctx.closePath(); ctx.fill();
+      circle(6, -1.5, 1.4, "#fff");
+      ctx.restore();
+    });
+    // 右の屋台: わたあめ(お面が飾ってある)
+    const R = s.stallR;
+    ctx.fillStyle = "#5a3a5a"; ctx.fillRect(296, 150, 168, 96);
+    ctx.fillStyle = "#6d4a2e"; ctx.fillRect(290, 120, 8, 180); ctx.fillRect(462, 120, 8, 180);
+    ctx.fillStyle = "#fff4dc"; rr(318, 78, 124, 30, 5); ctx.fill(); ctx.strokeStyle = "#e05a8a"; ctx.lineWidth = 2; ctx.stroke();
+    label(R.sign, 380, 94, R.sign.length > 4 ? 18 : 22, "#e05a8a");
+    drawAwning(284, 112, 192, 6, R.awning);
+    s.masks.forEach((m, i) => drawMask(m, 330 + i*50, 180, s.maskUpside === i));
+    s.wataame.forEach((c, i) => {
+      const x = 392 + i*30;
+      line(x, 226, x, 246, "#e6c48a", 3);
+      circle(x-6, 222, 10, c); circle(x+6, 222, 10, c); circle(x, 212, 11, c);
+    });
+    ctx.fillStyle = "#9a6a44"; ctx.fillRect(288, 246, 184, 54);
+    for(let y=258; y<GROUND_Y; y+=14) line(288, y, 472, y, "rgba(0,0,0,.18)", 1.5);
+    // 太鼓
+    if(s.taiko.show){
+      line(532, GROUND_Y, 546, 266, "#5a3a26", 5); line(588, GROUND_Y, 574, 266, "#5a3a26", 5);
+      ctx.fillStyle = s.taiko.color; rr(530, 234, 60, 46, 14); ctx.fill();
+      ctx.fillStyle = "#3b2a1e"; ctx.fillRect(530, 242, 60, 3); ctx.fillRect(530, 270, 60, 3);
+      oval(560, 234, 30, 8, "#f3e6c8"); ctx.strokeStyle = "#3b2a1e"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(560, 234, 30, 8, 0, 0, Math.PI*2); ctx.stroke();
+      if(s.taiko.bachi >= 1) line(538, 214, 578, 230, "#e6c48a", 4.5);
+      if(s.taiko.bachi >= 2) line(582, 214, 542, 230, "#e6c48a", 4.5);
+    }
+    ctx.restore();
+  }
+
+  /* ---------- 右上のチップ(テーマ名・発見数) ---------- */
+  let foundUnlocked = false, foundCache = 0;   // 発見数は1回脱出してから表示する
+  function drawChip(str, right){
+    ctx.font = "11px " + FONT;
+    const w = ctx.measureText(str).width + 16, x = right - w, y = 8, h = 18;
+    ctx.fillStyle = "rgba(20,14,10,.42)"; rr(x, y, w, h, 6); ctx.fill();
+    ctx.fillStyle = "rgba(255,248,236,.92)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(str, x + w/2, y + h/2 + 1);
+    return x;
+  }
+  function drawCornerChips(s){
+    const x = drawChip(s.themeLabel, VIEW_W - 10);
+    if(foundUnlocked) drawChip("発見 " + foundCache + "/" + s.theme.anomalies.length, x - 6);
   }
   function renderScene(s, cam, t){
     ctx.clearRect(0,0,VIEW_W,VIEW_H);
     drawSky(s); drawFarShops(s, cam); drawFloor(s, cam);
-    drawShop(s, cam); drawLanterns(s, cam); drawStand(s, cam); drawLamp(s, cam); drawExitSign(s, cam);
-    drawActors(s, cam, t);
+    s.theme.back(s, cam, t);
+    drawExitSign(s, cam);
+    drawMochis(s, cam, t);
+    if(s.theme.front) s.theme.front(s, cam, t);
     if(s.sky.night){ ctx.fillStyle = "rgba(20,10,50,.28)"; ctx.fillRect(0,0,VIEW_W,VIEW_H); }
-    drawThemeLabel(s);
+    drawCornerChips(s);
   }
 
   /* =========================================================
@@ -632,10 +1022,12 @@
   let scene = null, anomaly = null, forced = undefined;
   let phase = "idle";          // intro | idle | walking | fading | ended
   let camX = 0, rafId = null, lastMsgTimer = null;
+  let runNewFinds = 0;
+  function countFound(th){ return Found.list(th.id).filter(id => th.byId[id]).length; }
 
   function newScene(){
     scene = buildScene(round);
-    anomaly = (forced !== undefined) ? (forced ? ANOMALY_BY_ID[forced] || null : null) : pickAnomaly(round);
+    anomaly = (forced !== undefined) ? (forced ? currentTheme.byId[forced] || null : null) : pickAnomaly(round);
     forced = undefined;
     if(anomaly) anomaly.apply(scene);
     camX = 0;
@@ -671,6 +1063,7 @@
     const correct = hadAnomaly ? dir === "back" : dir === "go";
     if(correct){
       round++; Sfx.good();
+      if(hadAnomaly && Found.add(currentTheme.id, anomaly.id)){ runNewFinds++; foundCache = countFound(currentTheme); }
       setMsg("正解", "good");
     } else {
       miss++; Sfx.bad();
@@ -720,6 +1113,7 @@
     PlayCounts.increment("mochi-exit");
     currentTheme = THEMES[Math.floor(Math.random() * THEMES.length)];
     round = 0; miss = 0; usedIds = new Set(); startedAt = performance.now();
+    runNewFinds = 0; foundUnlocked = Best.load().timeMs > 0; foundCache = countFound(currentTheme);
     paintHud(); setChoices(true);
     show("play"); fitCanvas(); startIntro();
   }
@@ -728,9 +1122,12 @@
     if(rafId) cancelAnimationFrame(rafId); rafId = null;
     const ms = performance.now() - startedAt;
     const r = Best.record(ms, miss);
+    foundUnlocked = true; foundCache = countFound(currentTheme);
     $("resultStats").innerHTML =
       "クリアタイム <b>" + (ms/1000).toFixed(1) + "</b> 秒" + (r.time ? '<span class="new">NEW!</span>' : "") + "<br>" +
-      "ミス <b>" + miss + "</b> 回" + (r.miss ? '<span class="new">NEW!</span>' : "");
+      "ミス <b>" + miss + "</b> 回" + (r.miss ? '<span class="new">NEW!</span>' : "") + "<br>" +
+      currentTheme.label + "の異変 <b>" + foundCache + "</b> / " + currentTheme.anomalies.length + " 発見" +
+      (runNewFinds ? '<span class="new">+' + runNewFinds + '</span>' : "");
     paintBest();
     show("result");
   }
@@ -772,10 +1169,12 @@
     debugState(){ return { round, miss, phase, anomaly: anomaly ? anomaly.id : null, used: Array.from(usedIds) }; },
     forceAnomaly(id){ forced = id; },            // null=異変なし, id=その異変, undefined=ランダムに戻す
     choose, startGame,
-    setTheme(i){ currentTheme = THEMES[i]; }, themeCount: THEMES.length,
+    setTheme(i){ currentTheme = THEMES[i]; usedIds = new Set(); foundCache = countFound(currentTheme); }, themeCount: THEMES.length,
+    themeId(){ return currentTheme.id; },
+    foundCount(){ return countFound(currentTheme); }, setFoundUnlocked(v){ foundUnlocked = !!v; },
     skipIntro(){ if(phase !== "intro") return; showIntroControls(false); setMsg(""); newScene(); phase = "idle"; setChoices(true); },
-    anomalies: ANOMALIES.map(a => ({ id:a.id, level:a.level, desc:a.desc })),
-    renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) ANOMALY_BY_ID[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },
+    get anomalies(){ return currentTheme.anomalies.map(a => ({ id:a.id, level:a.level, desc:a.desc })); },
+    renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) currentTheme.byId[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },
     pickAnomaly, resetUsed(){ usedIds = new Set(); },
   };
 })();
