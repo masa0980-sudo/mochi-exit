@@ -647,10 +647,17 @@
     const t0 = performance.now(), WALK = 820, WIPE = 300, SLIDE = 420;
     let stepAt = 0, swapped = false;
     const ease = u => u < .5 ? 2*u*u : 1 - Math.pow(-2*u+2, 2)/2;
-    function vignette(a){
-      const g = ctx.createRadialGradient(VIEW_W/2, VIEW_H/2, VIEW_H*0.35, VIEW_W/2, VIEW_H/2, VIEW_W*0.75);
-      g.addColorStop(0, "rgba(10,8,20,0)"); g.addColorStop(1, "rgba(10,8,20," + a + ")");
-      ctx.fillStyle = g; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    // 歩行中の「流れ」表現: 進行方向と逆向きに流れる淡い横線(スピード線)。
+    // 以前は周辺減光(中央が丸く明るく残る)を使っていたが「丸い画面が出る」と不評だったので廃止
+    function speedLines(t, sign){
+      ctx.save(); ctx.globalAlpha = 0.18 + t * 0.25; ctx.strokeStyle = "#fff8ec"; ctx.lineWidth = 2;
+      for(let k = 0; k < 14; k++){
+        const y = 40 + (k * 61) % (VIEW_H - 60);
+        const len = 40 + (k * 37) % 90;
+        const x = ((k * 173 - sign * t * 900) % (VIEW_W + 200) + VIEW_W + 200) % (VIEW_W + 200) - 100;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y); ctx.stroke();
+      }
+      ctx.restore();
     }
     function frame(now){
       const el = now - t0;
@@ -660,13 +667,13 @@
         const bob = Math.abs(Math.sin(el / 110)) * 6 * Math.min(1, t*3);
         ctx.save(); ctx.translate(0, -bob); renderScene(scene, camX, now); ctx.restore();
         ctx.fillStyle = "#e9d9bd"; ctx.fillRect(0, VIEW_H - bob, VIEW_W, bob);
-        vignette(0.25 + t * 0.55);
+        speedLines(t, dirSign);
+        if(t > 0.6){ ctx.fillStyle = "rgba(10,8,20," + ((t - 0.6) / 0.4 * 0.6) + ")"; ctx.fillRect(0,0,VIEW_W,VIEW_H); }   // 終盤は均一に暗くする
         if(now - stepAt > 400){ Sfx.step(); stepAt = now; }
       } else if(el < WALK + WIPE){
         const t = ease((el - WALK) / WIPE);
         if(!swapped){ swapped = true; done(); if(phase === "ended") { rafId = null; return; } }
         // 直前の絵を暗く残したまま、黒い帯が進行方向から拭っていく
-        vignette(0.8);
         const w = VIEW_W * t;
         ctx.fillStyle = "#0a0814";
         if(dirSign > 0) ctx.fillRect(VIEW_W - w, 0, w, VIEW_H); else ctx.fillRect(0, 0, w, VIEW_H);
@@ -676,7 +683,6 @@
         const off = dirSign * VIEW_W * (1 - t);
         ctx.save(); ctx.beginPath(); ctx.rect(off, 0, VIEW_W, VIEW_H); ctx.clip();   // パララックス層のはみ出しを黒帯の外に描かない
         ctx.translate(off, 0); renderScene(scene, 0, now); ctx.restore();
-        vignette((1 - t) * 0.6);
         // 到着した出口の番号を一瞬大きく浮かべる
         const a = t < 0.5 ? t*2 : (1 - t) * 2;
         ctx.fillStyle = "rgba(255,233,184," + (a*0.9) + ")";
