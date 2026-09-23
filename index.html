@@ -325,11 +325,11 @@
      点灯・扉・臼の湯気・ポスター色・団子の色・もちの姿・影・時計・出口看板)は一切変えず、雰囲気だけ
      (空・壁・遠景の店・床・屋根の色)を変える — こうすれば異変の見え方はテーマに関わらず同じになる。 */
   const THEMES = [
-    { id:"dusk",  sky:{top:"#f6c7a2", bottom:"#fde7cf"}, wall:{color:"#fbf1de", plank:"#e6d3b5"},
+    { id:"dusk",  label:"夕焼け", sky:{top:"#f6c7a2", bottom:"#fde7cf"}, wall:{color:"#fbf1de", plank:"#e6d3b5"},
       farShops:"#c9a58a", floor:"#e9d9bd", floorBase:"#c9a883", roof:"#8c5a3c", roofDark:"#6f4630" },
-    { id:"morning", sky:{top:"#cfe9f7", bottom:"#fdf1de"}, wall:{color:"#f6efe1", plank:"#ddc9a8"},
+    { id:"morning", label:"朝", sky:{top:"#cfe9f7", bottom:"#fdf1de"}, wall:{color:"#f6efe1", plank:"#ddc9a8"},
       farShops:"#b9a48f", floor:"#ecdfc4", floorBase:"#c3ad82", roof:"#9a6b46", roofDark:"#7a5030" },
-    { id:"twilight", sky:{top:"#e7b3c9", bottom:"#ffd9b0"}, wall:{color:"#f7e6d2", plank:"#e0c49a"},
+    { id:"twilight", label:"たそがれ", sky:{top:"#e7b3c9", bottom:"#ffd9b0"}, wall:{color:"#f7e6d2", plank:"#e0c49a"},
       farShops:"#b98f8a", floor:"#e3cfae", floorBase:"#b8926a", roof:"#7d4a35", roofDark:"#5c3524" },
   ];
   let currentTheme = THEMES[0];
@@ -340,6 +340,7 @@
       sky:{ top:th.sky.top, bottom:th.sky.bottom, night:false },
       farShops:{ color:th.farShops },
       floor:{ color:th.floor, base:th.floorBase },
+      themeLabel:th.label,
       wall:{ color:th.wall.color, plank:th.wall.plank, roof:th.roof, roofDark:th.roofDark },
       noren:{ color:"#4e6fb8", text:"もち" },
       sign:{ text:"もち屋", flip:false },
@@ -600,12 +601,25 @@
     if(s.cat) drawCat(455, GROUND_Y-8);
     ctx.restore();
   }
+  function drawThemeLabel(s){
+    // 右上に小さく表示するだけの飾り。空の色に関わらず読めるよう、常に暗いチップ+明るい文字にする
+    ctx.font = "11px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(s.themeLabel).width + 16;
+    ctx.fillStyle = "rgba(20,14,10,.4)";
+    const rx = VIEW_W - 10 - w, ry = 8, rh = 18;
+    ctx.beginPath(); ctx.moveTo(rx+6,ry); ctx.arcTo(rx+w,ry,rx+w,ry+rh,6); ctx.arcTo(rx+w,ry+rh,rx,ry+rh,6);
+    ctx.arcTo(rx,ry+rh,rx,ry,6); ctx.arcTo(rx,ry,rx+w,ry,6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(255,248,236,.9)";
+    ctx.fillText(s.themeLabel, VIEW_W - 18, ry + rh/2 + 1);
+  }
   function renderScene(s, cam, t){
     ctx.clearRect(0,0,VIEW_W,VIEW_H);
     drawSky(s); drawFarShops(s, cam); drawFloor(s, cam);
     drawShop(s, cam); drawLanterns(s, cam); drawStand(s, cam); drawLamp(s, cam); drawExitSign(s, cam);
     drawActors(s, cam, t);
     if(s.sky.night){ ctx.fillStyle = "rgba(20,10,50,.28)"; ctx.fillRect(0,0,VIEW_W,VIEW_H); }
+    drawThemeLabel(s);
   }
 
   /* =========================================================
