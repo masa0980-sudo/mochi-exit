@@ -27,7 +27,7 @@
   .screen.active{display:flex;}
 
   /* ===== タイトル ===== */
-  #title{justify-content:center;padding:24px;text-align:center;position:relative;
+  #title{justify-content:center;padding:24px;text-align:center;
     background:url('art/keyart.png') center/cover no-repeat;}
   #title::before{content:"";position:absolute;inset:0;
     background:linear-gradient(180deg,rgba(12,15,26,.35) 0%,rgba(12,15,26,.72) 65%,rgba(12,15,26,.88) 100%);}
@@ -37,9 +37,8 @@
     -webkit-background-clip:text;background-clip:text;color:transparent;
     filter:drop-shadow(0 0 18px rgba(255,179,122,.35));}
   .sub{margin-top:8px;font-size:12px;letter-spacing:.28em;color:var(--accent);opacity:.9;}
-  .rule{margin:20px auto 0;max-width:340px;padding:14px 18px;border-radius:14px;
-    background:rgba(12,15,26,.55);border:1px solid var(--line);
-    font-size:13px;line-height:1.9;text-align:left;}
+  .rule{max-width:320px;font-size:13px;line-height:1.9;text-align:left;}
+  .rule p{margin:0 0 10px;} .rule p:last-child{margin-bottom:0;}
   .rule b{color:var(--accent);}
   .btn{margin-top:22px;cursor:pointer;user-select:none;border:none;
     padding:15px 46px;font-size:18px;font-weight:800;letter-spacing:.1em;
@@ -82,6 +81,14 @@
   .choice[hidden]{display:none;}
   #msg.intro{color:var(--accent);font-weight:700;}
 
+  /* ===== あそびかた(タイトルから開くモーダル) ===== */
+  #howtoOverlay{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+    background:rgba(8,10,20,.72);backdrop-filter:blur(2px);padding:20px;}
+  #howtoOverlay.show{display:flex;}
+  .howtoCard{background:rgba(26,33,64,.95);border:1px solid var(--line);border-radius:16px;
+    padding:26px 30px;text-align:center;max-width:360px;}
+  .howtoCard h2{font-size:18px;margin-bottom:14px;letter-spacing:.06em;}
+
   /* ===== 結果 ===== */
   #result{justify-content:center;padding:24px;text-align:center;}
   #result h2{font-size:26px;letter-spacing:.06em;margin-bottom:6px;color:var(--good);}
@@ -99,18 +106,23 @@
   <section id="title" class="screen active">
     <div class="logo">もち出口</div>
     <div class="sub">MOCHI EXIT</div>
-    <div class="rule">
-      和菓子商店街の通路をくり返し歩く。<br>
-      いつもと<b>違うところ（異変）</b>があれば <b>◀ 引き返す</b>、<br>
-      なにも無ければ <b>進む ▶</b>。<br>
-      正解を重ねて <b>出口8</b> にたどり着けば脱出。<br>
-      間違えると出口0からやり直し。<br>
-      最初に<b>「いつもの通路」</b>を見せるので、よく覚えておこう。
-    </div>
     <button class="btn" id="startBtn">はじめる</button>
+    <button class="btn ghost" id="howtoBtn">あそびかた</button>
     <div id="bestLabel"></div>
     <div id="playCountLabel"></div>
   </section>
+
+  <div id="howtoOverlay">
+    <div class="howtoCard">
+      <h2>あそびかた</h2>
+      <div class="rule">
+        <p>和菓子商店街の通路をくり返し歩きます。最初に<b>「いつもの通路」</b>を見せるので、よく覚えてください。</p>
+        <p>いつもと<b>違うところ（異変）</b>があれば <b>◀ 引き返す</b>、なにも無ければ <b>進む ▶</b>。</p>
+        <p>正解を重ねて <b>出口8</b> にたどり着けば脱出。間違えると出口0からやり直しです。</p>
+      </div>
+      <button class="btn ghost" id="howtoCloseBtn">とじる</button>
+    </div>
+  </div>
 
   <!-- ================= プレイ ================= -->
   <section id="play" class="screen">
@@ -408,10 +420,12 @@
       [[80,60,34],[120,70,26],[420,48,30],[470,58,22]].forEach(c=>{ ctx.beginPath(); ctx.arc(c[0],c[1],c[2],0,Math.PI*2); ctx.fill(); });
     }
   }
+  // 遠景は 0.5 倍のパララックス。周期 160px なので、1画面(640px)歩くと遠景は 320px = ちょうど2周期ぶん動き、
+  // 隣のシーンとつなげて描いても継ぎ目が出ない(連続スクロールの前提。倍率や周期を変えるときは整数倍を保つ)
   function drawFarShops(s, cam){
-    ctx.save(); ctx.translate(-cam*0.3, 0);
+    ctx.save(); ctx.translate(-cam*0.5, 0);
     ctx.fillStyle = s.farShops.color;
-    for(let i=-1;i<5;i++){ const x=i*220+30; ctx.fillRect(x,180,160,120); ctx.fillStyle="#b08c72"; ctx.fillRect(x-8,172,176,14); ctx.fillStyle=s.farShops.color; }
+    for(let i=-2;i<8;i++){ const x=i*160+20; ctx.fillRect(x,180,120,120); ctx.fillStyle="#b08c72"; ctx.fillRect(x-6,172,132,14); ctx.fillStyle=s.farShops.color; }
     ctx.restore();
   }
   function drawFloor(s, cam){
@@ -618,7 +632,7 @@
   function leaveIntro(){
     if(phase !== "intro") return;
     showIntroControls(false); setMsg("");
-    walk(1, () => { newScene(); phase = "idle"; setChoices(true); });
+    walk(1, () => { newScene(); }, () => { phase = "idle"; setChoices(true); });
   }
 
   function choose(dir){                    // dir: "go" | "back"
@@ -634,65 +648,40 @@
       round = 0;
     }
     paintHud();
-    walk(dir === "go" ? 1 : -1, () => {
-      if(round >= GOAL){ finish(); return; }
-      newScene(); phase = "idle"; setChoices(true);
-    });
+    const cleared = round >= GOAL;
+    walk(dir === "go" ? 1 : -1,
+      () => { if(cleared){ scene = buildScene(GOAL); anomaly = null; } else newScene(); },
+      () => { if(cleared) finish(); else { phase = "idle"; setChoices(true); } });
   }
-  /* 歩行演出: ①歩く(横スクロール+足取りの上下揺れ+画面端が暗くなる)
-     → ②黒い帯が進行方向から画面を拭う(ワイプ) → ③次の通路が反対側から滑り込み、出口番号が一瞬浮かぶ。
-     以前は「少しスクロールして暗転→フェードイン」だけで、特にスマホでは切り替わりが分かりにくかった。 */
-  function walk(dirSign, done){
+  /* 歩行演出: 今の通路と次の通路を横に並べて1枚の長い通りとして描き、1画面ぶんスーッと
+     スクロールする。暗転・ワイプ・出口番号の表示はしない(「切り替わったと分からないレベルで
+     滑らかに」という要望)。prepare() で次のシーンを先に作り、arrive() で操作を返す。 */
+  function walk(dirSign, prepare, arrive){
     phase = "walking"; setChoices(false);
-    const t0 = performance.now(), WALK = 820, WIPE = 300, SLIDE = 420;
-    let stepAt = 0, swapped = false;
-    const ease = u => u < .5 ? 2*u*u : 1 - Math.pow(-2*u+2, 2)/2;
-    // 歩行中の「流れ」表現: 進行方向と逆向きに流れる淡い横線(スピード線)。
-    // 以前は周辺減光(中央が丸く明るく残る)を使っていたが「丸い画面が出る」と不評だったので廃止
-    function speedLines(t, sign){
-      ctx.save(); ctx.globalAlpha = 0.18 + t * 0.25; ctx.strokeStyle = "#fff8ec"; ctx.lineWidth = 2;
-      for(let k = 0; k < 14; k++){
-        const y = 40 + (k * 61) % (VIEW_H - 60);
-        const len = 40 + (k * 37) % 90;
-        const x = ((k * 173 - sign * t * 900) % (VIEW_W + 200) + VIEW_W + 200) % (VIEW_W + 200) - 100;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y); ctx.stroke();
-      }
-      ctx.restore();
+    const prev = scene;
+    prepare();                       // ここで scene が次の通路になる(walking 中なので描画はしない)
+    const next = scene;
+    const t0 = performance.now(), DUR = 1400;
+    let stepAt = 0;
+    const ease = u => u < .5 ? 4*u*u*u : 1 - Math.pow(-2*u+2, 3)/2;   // ゆっくり出てゆっくり止まる
+    function drawSegment(sc, cam, x0){
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, -20, VIEW_W, VIEW_H+40); ctx.clip();
+      renderScene(sc, cam, performance.now()); ctx.restore();
     }
     function frame(now){
-      const el = now - t0;
-      if(el < WALK){
-        const t = el / WALK;
-        camX = dirSign * VIEW_W * 0.7 * t * t;
-        const bob = Math.abs(Math.sin(el / 110)) * 6 * Math.min(1, t*3);
-        ctx.save(); ctx.translate(0, -bob); renderScene(scene, camX, now); ctx.restore();
-        ctx.fillStyle = "#e9d9bd"; ctx.fillRect(0, VIEW_H - bob, VIEW_W, bob);
-        speedLines(t, dirSign);
-        if(t > 0.6){ ctx.fillStyle = "rgba(10,8,20," + ((t - 0.6) / 0.4 * 0.6) + ")"; ctx.fillRect(0,0,VIEW_W,VIEW_H); }   // 終盤は均一に暗くする
-        if(now - stepAt > 400){ Sfx.step(); stepAt = now; }
-      } else if(el < WALK + WIPE){
-        const t = ease((el - WALK) / WIPE);
-        if(!swapped){ swapped = true; done(); if(phase === "ended") { rafId = null; return; } }
-        // 直前の絵を暗く残したまま、黒い帯が進行方向から拭っていく
-        const w = VIEW_W * t;
-        ctx.fillStyle = "#0a0814";
-        if(dirSign > 0) ctx.fillRect(VIEW_W - w, 0, w, VIEW_H); else ctx.fillRect(0, 0, w, VIEW_H);
-      } else if(el < WALK + WIPE + SLIDE){
-        const t = ease((el - WALK - WIPE) / SLIDE);
-        ctx.fillStyle = "#0a0814"; ctx.fillRect(0,0,VIEW_W,VIEW_H);
-        const off = dirSign * VIEW_W * (1 - t);
-        ctx.save(); ctx.beginPath(); ctx.rect(off, 0, VIEW_W, VIEW_H); ctx.clip();   // パララックス層のはみ出しを黒帯の外に描かない
-        ctx.translate(off, 0); renderScene(scene, 0, now); ctx.restore();
-        // 到着した出口の番号を一瞬大きく浮かべる
-        const a = t < 0.5 ? t*2 : (1 - t) * 2;
-        ctx.fillStyle = "rgba(255,233,184," + (a*0.9) + ")";
-        ctx.font = "bold 64px 'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif";
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText("出口 " + scene.exitSign.n, VIEW_W/2, VIEW_H*0.42);
-      } else {
-        renderScene(scene, 0, now); rafId = null; return;
-      }
-      rafId = requestAnimationFrame(frame);
+      const t = Math.min(1, (now - t0) / DUR);
+      camX = dirSign * VIEW_W * ease(t);
+      const bob = Math.sin(t * Math.PI * 4) * 2.5 * Math.sin(t * Math.PI);   // 足取りは中盤だけ・小さく
+      ctx.clearRect(0,0,VIEW_W,VIEW_H);
+      ctx.save(); ctx.translate(0, -bob);
+      drawSegment(prev, camX, -camX);                              // 今の通路
+      drawSegment(next, camX - dirSign*VIEW_W, -camX + dirSign*VIEW_W);   // 進行方向の隣に次の通路
+      ctx.restore();
+      if(bob > 0){ ctx.fillStyle = "#e9d9bd"; ctx.fillRect(0, VIEW_H - bob, VIEW_W, bob); }
+      if(t > 0.15 && t < 0.85 && now - stepAt > 400){ Sfx.step(); stepAt = now; }
+      if(t < 1){ rafId = requestAnimationFrame(frame); return; }
+      camX = 0; renderScene(scene, 0, now); rafId = null;
+      if(phase !== "ended") arrive();
     }
     rafId = requestAnimationFrame(frame);
   }
@@ -736,6 +725,8 @@
     if(e.key === "ArrowLeft"){ e.preventDefault(); choose("back"); }
   });
   $("startBtn").addEventListener("click", startGame);
+  $("howtoBtn").addEventListener("click", function(){ $("howtoOverlay").classList.add("show"); });
+  $("howtoCloseBtn").addEventListener("click", function(){ $("howtoOverlay").classList.remove("show"); });
   $("retryBtn").addEventListener("click", startGame);
   $("toTitleBtn").addEventListener("click", quit);
   $("quitBtn").addEventListener("click", quit);

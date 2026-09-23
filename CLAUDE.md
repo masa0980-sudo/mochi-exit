@@ -42,17 +42,23 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
    `allowedLevels(round)` は `<3:[1] / <6:[1,2] / それ以上:[1,2,3]`、最上位 level を重み 2 で優先。
 5. **描画** — `renderScene(scene, camX, t)`。部品ごとの `draw*` を奥から順に呼ぶ。
    `camX` は歩行演出の横スクロール（遠景は 0.3 倍のパララックス）。静止中は rAF を回さない。
-   歩行演出 `walk()` は3段: ①歩く（スクロール+足取りの上下揺れ+逆向きに流れるスピード線、終盤は
-   均一に暗転 820ms。周辺減光は「丸い画面が出る」と不評で廃止した）→ ②黒帯が進行方向から
-   画面を拭う（300ms）→ ③次の通路が反対側から滑り込み「出口 N」が浮かぶ（420ms）。②の途中で
-   `done()`（=`newScene()`）を呼ぶので、**`newScene()` は `phase==="walking"` の間は描画しない**
-   （描くと新シーンを拭ってから同じ絵を滑り込ませる二重見せになる）。③は `clip()` してから
-   `translate` する（パララックス層が黒帯の外にはみ出て見える、を実際に踏んだ）。
+   歩行演出 `walk(dirSign, prepare, arrive)` は**継ぎ目のない連続スクロール**: `prepare()` で次の
+   シーンを先に作り、今の通路と次の通路を横に並べて（`clip` してから `renderScene`）1画面ぶんを
+   1.4 秒の ease-in-out で流す。暗転・ワイプ・出口番号の表示・周辺減光は**すべて廃止**した
+   （「切り替わったと分からないレベルで滑らかに」という要望。周辺減光は「丸い画面が出る」、
+   ワイプ+出口番号は「切り替えが目立ちすぎる」と不評だった）。継ぎ目を消すため
+   **遠景のパララックスは 0.5 倍・周期 160px**（1画面 640px 進むと遠景は 320px = 2 周期ぶん動く）、
+   床タイルは周期 64px（640 の約数）にしてある。倍率や周期を変えるときはこの整数倍関係を保つこと。
+   `newScene()` は `phase==="walking"` の間は描画しない（walk() が2枚並べて描く）。
 6. **Game** — `phase: intro | idle | walking | fading | ended`。`startGame()` はまず `startIntro()` で
    **異変の無い「いつもの通路」を判定なしで見せる**（8番出口の最初の通路と同じ。基準を覚える
    フェーズが無いと何が異変か判断できない、というユーザー指摘で追加）。「覚えた！」で `leaveIntro()`
    → `walk()` → 最初の判定シーンへ。以降は `choose(dir)` が判定→`walk()`→`newScene()`。
-   `round>=8` で `finish()`。画面は `SCREENS=["title","play","result"]` + `show()`。
+   `round>=8` なら `walk()` の `prepare` で異変なしの出口8の通路を作り、到着後に `finish()`。
+   画面は `SCREENS=["title","play","result"]` + `show()`。**タイトルはロゴ+はじめる+あそびかた
+   だけ**で、ルール文は `#howtoOverlay` モーダル（ユーザーの固定方針。メモリ
+   `game-title-simple-howto-button`）。`#title` に `position:relative` を足さないこと
+   （`.screen` の `absolute;inset:0` が外れてタイトルが内容の高さに縮み、下が空く。実際に踏んだ）。
 
 ### 異変を追加するとき
 
@@ -82,8 +88,8 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
 `debugState()` / `skipIntro()`（intro を演出なしで抜ける。テストは `startGame()` の直後に必ず呼ぶ）/ `forceAnomaly(id|null)`（次の `newScene` で1回だけ効く。`undefined` でランダムに戻る）/
 `choose("go"|"back")` / `startGame()` / `anomalies` / `renderOnly(id, round)` / `pickAnomaly(round)` /
 `resetUsed()`。通しテストは「`forceAnomaly(null)` → 現在シーンの `anomaly` を見て正解側を `choose`」を
-8回で `#result` が active になることを確認する。`walk()` の演出が約 1 秒あるので各手の後に
-1200ms 待つ。
+8回で `#result` が active になることを確認する。`walk()` の演出が 1.4 秒あるので各手の後に
+1900ms 待つ。
 
 ## Scope
 
