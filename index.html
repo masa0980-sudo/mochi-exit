@@ -557,13 +557,13 @@
       list.filter(a => levels.includes(a.level)).forEach(a => usedIds.delete(a.id));
       pool = list.filter(a => levels.includes(a.level));
     }
-    // 1回脱出した後は、まだ見つけていない(正解していない)異変から出す。round に合う level に
-    // 未発見が無ければ level を問わず未発見から。全部見つけたら通常の出題に戻る
+    // 1回脱出した後は、まだ見つけていない(正解していない)異変から出す。ただし序盤は簡単な異変に
+    // 限る方針が優先で、round に合う level に未発見が無ければ通常の出題(発見済みも含む)に戻る
     if(foundUnlocked){
       const found = new Set(Found.list(currentTheme.id));
       const fresh = list.filter(a => !found.has(a.id) && !usedIds.has(a.id));
       const freshLv = fresh.filter(a => levels.includes(a.level));
-      if(freshLv.length) pool = freshLv; else if(fresh.length) pool = fresh;
+      if(freshLv.length) pool = freshLv;
     }
     // 高い level をやや優先(round が進んだら微妙な異変を出したい)
     const weights = pool.map(a => a.level === Math.max.apply(null, levels) ? 2 : 1);
