@@ -30,6 +30,10 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
    （拍頭のタップ音+ハイハット）も耳障りと指摘され**打楽器を全廃**した。パッド+ベース+リードだけの
    アンビエント寄りの曲で、歩行中の足音も 400ms 間隔・小音量の sine に抑えてある。リズム要素を
    足したくなったら先にユーザーに聞くこと。
+   **ミュート**: 効果音もBGMも `master` ゲイン（`ac.destination` の手前に1つだけ）を通し、右上の `#muteBtn` で
+   0/1 に切り替える。状態は `localStorage["mochi-exit:muted"]`。音の苦情が2回あった作品で止める手段が
+   無かったため追加（2026-10-27）。**新しい音を足すときは `ac.destination` に直結せず `master` へ繋ぐこと**
+   （直結するとミュートが効かない）。`#play #hud` の右に 56px 余白があるのはこのボタンを避けるため。
 2. **PlayCounts** — Firestore REST（SDK 無し）。`gameId:"mochi-exit"`、ローカル配信では書かない。
 3. **Best** — `localStorage["mochi-exit:best"]` に `{timeMs, miss}` を JSON 1 キーで保存。
 4. **Scene / THEMES** — 本作の核。**テーマ = 通りそのもの**で、店・アイテム・異変がテーマごとに別

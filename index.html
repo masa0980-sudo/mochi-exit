@@ -94,6 +94,13 @@
   .choice[hidden]{display:none;}
   #msg.intro{color:var(--accent);font-weight:700;}
 
+  /* 音のON/OFF。どの画面でも右上に出す(BGMが常時鳴るので止める手段は必須) */
+  .muteBtn{position:absolute;top:10px;right:10px;z-index:30;width:38px;height:38px;border-radius:999px;
+    border:1px solid var(--line);background:rgba(11,16,32,.7);color:#fff;font-size:16px;cursor:pointer;
+    touch-action:manipulation;}
+  .muteBtn.off{opacity:.55;}
+  #play #hud{padding-right:56px;}
+
   /* ===== あそびかた(タイトルから開くモーダル) ===== */
   #howtoOverlay{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
     background:rgba(8,10,20,.72);backdrop-filter:blur(2px);padding:20px;}
@@ -114,6 +121,7 @@
 </head>
 <body>
 <div id="stage">
+  <button class="muteBtn" id="muteBtn" aria-label="音を消す/出す" title="音を消す/出す">🔊</button>
 
   <!-- ================= タイトル ================= -->
   <section id="title" class="screen active">
@@ -184,8 +192,23 @@
         曲調だけ「かわいいが少し不穏」(テンポを落とし短調寄り)に変えた。
      ========================================================= */
   const Sfx = (function(){
-    let ac = null;
-    function ensure(){ if(!ac){ const AC = window.AudioContext || window.webkitAudioContext; ac = new AC(); } if(ac.state === "suspended") ac.resume(); }
+    let ac = null, master = null;
+    const MUTE_KEY = "mochi-exit:muted";
+    let muted = false;
+    try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e) {}
+    function ensure(){
+      if(!ac){
+        const AC = window.AudioContext || window.webkitAudioContext; ac = new AC();
+        master = ac.createGain(); master.gain.value = muted ? 0 : 1; master.connect(ac.destination);
+      }
+      if(ac.state === "suspended") ac.resume();
+    }
+    function setMuted(on){
+      muted = !!on;
+      try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e) {}
+      if(master) master.gain.value = muted ? 0 : 1;
+    }
+    function isMuted(){ return muted; }
     function tone(freq, dur, type, gain, glideTo, delay){
       if(!ac) return;
       const t0 = ac.currentTime + (delay || 0);
@@ -197,7 +220,7 @@
       g.gain.setValueAtTime(0, t0);
       g.gain.linearRampToValueAtTime(gain || 0.18, t0 + 0.01);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-      osc.connect(g); g.connect(ac.destination);
+      osc.connect(g); g.connect(master);
       osc.start(t0); osc.stop(t0 + dur + 0.02);
     }
     const BGM_BPM = 96;
@@ -233,7 +256,7 @@
     let bgmDelay = null, bgmDelayFb = null, bgmDelayWet = null;
     function setupBgmBus(){
       if (!ac || busGain) return;
-      busGain = ac.createGain(); busGain.gain.value = 0.42; busGain.connect(ac.destination);
+      busGain = ac.createGain(); busGain.gain.value = 0.42; busGain.connect(master);
       bgmDelay = ac.createDelay(1.0); bgmDelayFb = ac.createGain(); bgmDelayWet = ac.createGain();
       bgmDelay.delayTime.value = 0.42; bgmDelayFb.gain.value = 0.3; bgmDelayWet.gain.value = 0.18;
       bgmDelay.connect(bgmDelayFb); bgmDelayFb.connect(bgmDelay);
@@ -282,7 +305,7 @@
     function startBgm(){ ensure(); if (!ac || bgmOn) return; setupBgmBus(); bgmOn = true; bgmStep = 0; bgmNextAt = ac.currentTime + 0.08; bgmTick(); }
     function stopBgm(){ bgmOn = false; clearTimeout(bgmTimer); }
     return {
-      ensure, startBgm, stopBgm,
+      ensure, startBgm, stopBgm, setMuted, isMuted,
       step(){ tone(200, 0.06, "sine", 0.035, 150); },
       good(){ tone(660, 0.12, "sine", 0.14); tone(990, 0.18, "sine", 0.12, null, 0.1); },
       bad(){ tone(220, 0.3, "sawtooth", 0.14, 90); tone(160, 0.35, "square", 0.08, 70, 0.05); },
@@ -1215,6 +1238,9 @@
   document.addEventListener("visibilitychange", function(){ if(document.hidden) Sfx.stopBgm(); else if($("play").classList.contains("active") && phase !== "ended") Sfx.startBgm(); });
   window.addEventListener("pagehide", function(){ Sfx.stopBgm(); });
 
+  function paintMute(){ const on = Sfx.isMuted(); $("muteBtn").textContent = on ? "🔇" : "🔊"; $("muteBtn").classList.toggle("off", on); $("muteBtn").setAttribute("aria-pressed", on ? "true" : "false"); }
+  $("muteBtn").addEventListener("click", function(e){ e.preventDefault(); Sfx.setMuted(!Sfx.isMuted()); paintMute(); });
+  paintMute();
   fitCanvas(); paintBest();
   PlayCounts.fetchCount("mochi-exit").then(function(c){ if(c != null) $("playCountLabel").textContent = "これまでに " + c.toLocaleString() + " 回プレイされています"; });
 
@@ -1226,6 +1252,7 @@
     setTheme(i){ currentTheme = THEMES[i]; usedIds = new Set(); foundCache = countFound(currentTheme); }, themeCount: THEMES.length,
     themeId(){ return currentTheme.id; },
     foundCount(){ return countFound(currentTheme); }, setFoundUnlocked(v){ foundUnlocked = !!v; },
+    isMuted(){ return Sfx.isMuted(); },
     skipIntro(){ if(phase !== "intro") return; showIntroControls(false); setMsg(""); newScene(); phase = "idle"; setChoices(true); },
     get anomalies(){ return currentTheme.anomalies.map(a => ({ id:a.id, level:a.level, desc:a.desc })); },
     renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) currentTheme.byId[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },
