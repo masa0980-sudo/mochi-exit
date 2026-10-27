@@ -65,6 +65,25 @@
   .themeCard.random{justify-content:center;padding:14px 8px;font-size:15px;font-weight:800;}
   #select .btn.ghost{margin-top:6px;}
 
+  /* ===== 図鑑(見つけた異変の一覧) ===== */
+  #zukan{justify-content:flex-start;padding:16px 14px 14px;text-align:center;}
+  #zukan h2{font-size:18px;letter-spacing:.08em;margin:6px 0 4px;}
+  #zukanTotal{font-size:12px;color:var(--accent);min-height:16px;margin-bottom:8px;}
+  #zukanTabs{display:flex;gap:6px;width:100%;margin-bottom:8px;}
+  .zTab{flex:1;padding:8px 4px;font-size:12px;font-weight:700;border-radius:10px;cursor:pointer;
+    border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);touch-action:manipulation;}
+  .zTab b{display:block;font-size:11px;color:var(--accent);font-weight:700;margin-top:2px;}
+  .zTab.on{background:linear-gradient(90deg,var(--accent2),var(--accent));color:#2a1608;border:none;}
+  .zTab.on b{color:#2a1608;}
+  #zukanList{flex:1;min-height:0;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:5px;
+    padding-right:2px;-webkit-overflow-scrolling:touch;}
+  .zRow{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 10px;border-radius:10px;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:13px;flex:none;}
+  .zRow .zLv{font-size:10px;letter-spacing:.1em;color:var(--accent);flex:none;width:34px;}
+  .zRow.lock{opacity:.55;} .zRow.lock .zTxt{letter-spacing:.2em;}
+  .zRow.found .zTxt::before{content:"✓ ";color:var(--good);}
+  #zukan .btn.ghost{margin-top:10px;flex:none;}
+
   /* ===== プレイ ===== */
   #play{justify-content:flex-start;}
   #hud{width:100%;display:flex;align-items:center;justify-content:space-between;
@@ -151,7 +170,17 @@
     <h2>どの通りを歩く？</h2>
     <div id="themeList" style="display:contents"></div>
     <button class="themeCard random" id="randomBtn">おまかせ（ランダム）</button>
+    <button class="btn ghost" id="zukanBtn" hidden>見つけた異変を見る</button>
     <button class="btn ghost" id="selectBackBtn">もどる</button>
+  </section>
+
+  <!-- ================= 図鑑 ================= -->
+  <section id="zukan" class="screen">
+    <h2>見つけた異変</h2>
+    <div id="zukanTotal"></div>
+    <div id="zukanTabs"></div>
+    <div id="zukanList"></div>
+    <button class="btn ghost" id="zukanBackBtn">もどる</button>
   </section>
 
   <!-- ================= プレイ ================= -->
@@ -1067,7 +1096,7 @@
   /* =========================================================
      6. Game — 状態機械。idle(選択待ち) → walking(演出) → 次シーン。
      ========================================================= */
-  const SCREENS = ["title","select","play","result"];
+  const SCREENS = ["title","select","zukan","play","result"];
   function show(id){ SCREENS.forEach(s => $(s).classList.toggle("active", s === id)); }
 
   let round = 0, miss = 0, startedAt = 0;
@@ -1180,8 +1209,33 @@
       list.appendChild(b);
     });
     currentTheme = keepTheme; foundUnlocked = keepUnlocked;
+    $("zukanBtn").hidden = !unlocked;
     show("select");
   }
+  /* 図鑑: 見つけた異変だけ中身(desc)を出し、未発見は「？？？」。答えを先に教えない方針は守る */
+  let zukanTheme = 0;
+  function paintZukan(){
+    let got = 0, all = 0;
+    THEMES.forEach(th => { got += countFound(th); all += th.anomalies.length; });
+    $("zukanTotal").textContent = "ぜんぶで " + got + " / " + all + (got === all ? "  コンプリート！" : "");
+    const tabs = $("zukanTabs"); tabs.innerHTML = "";
+    THEMES.forEach((th, i) => {
+      const b = document.createElement("button"); b.className = "zTab" + (i === zukanTheme ? " on" : "");
+      b.textContent = th.label;
+      const c = document.createElement("b"); c.textContent = countFound(th) + " / " + th.anomalies.length; b.appendChild(c);
+      b.addEventListener("click", () => { zukanTheme = i; paintZukan(); });
+      tabs.appendChild(b);
+    });
+    const th = THEMES[zukanTheme], found = new Set(Found.list(th.id));
+    const list = $("zukanList"); list.innerHTML = ""; list.scrollTop = 0;
+    th.anomalies.forEach(a => {
+      const row = document.createElement("div"); row.className = "zRow " + (found.has(a.id) ? "found" : "lock");
+      const lv = document.createElement("span"); lv.className = "zLv"; lv.textContent = "●".repeat(a.level) + "○".repeat(3 - a.level);
+      const tx = document.createElement("span"); tx.className = "zTxt"; tx.textContent = found.has(a.id) ? a.desc : "？？？";
+      row.appendChild(lv); row.appendChild(tx); list.appendChild(row);
+    });
+  }
+  function openZukan(i){ if(typeof i === "number") zukanTheme = i; paintZukan(); show("zukan"); }
   function startGame(themeIdx){
     Sfx.ensure(); Sfx.startBgm();
     PlayCounts.increment("mochi-exit");
@@ -1230,6 +1284,8 @@
   $("startBtn").addEventListener("click", openSelect);
   $("randomBtn").addEventListener("click", () => startGame(null));
   $("selectBackBtn").addEventListener("click", () => show("title"));
+  $("zukanBtn").addEventListener("click", () => openZukan());
+  $("zukanBackBtn").addEventListener("click", () => show("select"));
   $("howtoBtn").addEventListener("click", function(){ $("howtoOverlay").classList.add("show"); });
   $("howtoCloseBtn").addEventListener("click", function(){ $("howtoOverlay").classList.remove("show"); });
   $("retryBtn").addEventListener("click", () => startGame(lastThemeChoice));
@@ -1253,6 +1309,7 @@
     themeId(){ return currentTheme.id; },
     foundCount(){ return countFound(currentTheme); }, setFoundUnlocked(v){ foundUnlocked = !!v; },
     isMuted(){ return Sfx.isMuted(); },
+    openZukan,
     skipIntro(){ if(phase !== "intro") return; showIntroControls(false); setMsg(""); newScene(); phase = "idle"; setChoices(true); },
     get anomalies(){ return currentTheme.anomalies.map(a => ({ id:a.id, level:a.level, desc:a.desc })); },
     renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) currentTheme.byId[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },
