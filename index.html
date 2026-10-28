@@ -136,6 +136,9 @@
     padding:14px 22px;min-width:240px;}
   #resultStats b{color:var(--accent);font-size:17px;}
   #resultStats .new{color:var(--good);font-size:12px;margin-left:6px;}
+  #resultComplete{margin:6px 0 2px;padding:8px 18px;border-radius:12px;font-size:14px;font-weight:800;letter-spacing:.08em;
+    color:#2a1608;background:linear-gradient(90deg,var(--accent2),var(--accent));box-shadow:0 0 22px rgba(255,143,179,.35);}
+  #resultComplete[hidden]{display:none;}
 </style>
 </head>
 <body>
@@ -205,7 +208,9 @@
   <section id="result" class="screen">
     <h2>脱出成功！</h2>
     <div id="resultStats"></div>
+    <div id="resultComplete" hidden>全90種コンプリート！</div>
     <button class="btn" id="retryBtn">もういちど</button><br>
+    <button class="btn ghost" id="shareBtn">結果を共有する</button><br>
     <button class="btn ghost" id="toTitleBtn">タイトルへ</button>
   </section>
 
@@ -1246,6 +1251,19 @@
     paintHud(); setChoices(true);
     show("play"); fitCanvas(); startIntro();
   }
+  const SITE_URL = "https://masa0980-sudo.github.io/mochi-exit/";
+  let lastShare = "";
+  function totalFound(){ let got = 0, all = 0; THEMES.forEach(th => { got += countFound(th); all += th.anomalies.length; }); return { got, all }; }
+  function buildShare(ms){
+    const t = totalFound();
+    return [
+      "もち出口 脱出成功！",
+      currentTheme.label + " / " + (ms/1000).toFixed(1) + "秒 / ミス" + miss + "回",
+      "見つけた異変 " + countFound(currentTheme) + "/" + currentTheme.anomalies.length + "（全体 " + t.got + "/" + t.all + "）" + (t.got === t.all ? " コンプリート！" : ""),
+      "#もち出口",
+      SITE_URL
+    ].join("\n");
+  }
   function finish(){
     phase = "ended"; Sfx.stopBgm(); Sfx.clear();
     if(rafId) cancelAnimationFrame(rafId); rafId = null;
@@ -1257,6 +1275,9 @@
       "ミス <b>" + miss + "</b> 回" + (r.miss ? '<span class="new">NEW!</span>' : "") + "<br>" +
       currentTheme.label + "の異変 <b>" + foundCache + "</b> / " + currentTheme.anomalies.length + " 発見" +
       (runNewFinds ? '<span class="new">+' + runNewFinds + '</span>' : "");
+    const tf = totalFound();
+    $("resultComplete").hidden = tf.got !== tf.all;
+    lastShare = buildShare(ms);
     paintBest();
     show("result");
   }
@@ -1289,6 +1310,21 @@
   $("howtoBtn").addEventListener("click", function(){ $("howtoOverlay").classList.add("show"); });
   $("howtoCloseBtn").addEventListener("click", function(){ $("howtoOverlay").classList.remove("show"); });
   $("retryBtn").addEventListener("click", () => startGame(lastThemeChoice));
+  $("shareBtn").addEventListener("click", function(){
+    const text = lastShare, btn = $("shareBtn");
+    function done(msg){ btn.textContent = msg; setTimeout(function(){ btn.textContent = "結果を共有する"; }, 1800); }
+    function copy(){
+      function fallback(){
+        const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); done("コピーしました！"); } catch (e) { alert(text); }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(function(){ done("コピーしました！"); }, fallback); }
+      else fallback();
+    }
+    if(navigator.share){ navigator.share({ text: text }).catch(function(err){ if(!err || err.name !== "AbortError") copy(); }); }
+    else copy();
+  });
   $("toTitleBtn").addEventListener("click", quit);
   $("quitBtn").addEventListener("click", quit);
   document.addEventListener("visibilitychange", function(){ if(document.hidden) Sfx.stopBgm(); else if($("play").classList.contains("active") && phase !== "ended") Sfx.startBgm(); });
@@ -1309,7 +1345,7 @@
     themeId(){ return currentTheme.id; },
     foundCount(){ return countFound(currentTheme); }, setFoundUnlocked(v){ foundUnlocked = !!v; },
     isMuted(){ return Sfx.isMuted(); },
-    openZukan,
+    openZukan, shareText(){ return lastShare; },
     skipIntro(){ if(phase !== "intro") return; showIntroControls(false); setMsg(""); newScene(); phase = "idle"; setChoices(true); },
     get anomalies(){ return currentTheme.anomalies.map(a => ({ id:a.id, level:a.level, desc:a.desc })); },
     renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) currentTheme.byId[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },
