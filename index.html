@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>もち出口</title>
+<script>if(/[?&]mini=1(&|$)/.test(location.search)) document.documentElement.classList.add("mini");</script>
 <style>
+  /* ミニ版(?mini=1。mini-medley の iframe から呼ばれる)では、タイトル・ミュート・やめる・覚えたボタンを出さない */
+  .mini #title,.mini #muteBtn,.mini #quitBtn,.mini #memoBtn{display:none !important;}
   :root{
     --bg0:#0c0f1a; --bg1:#1a2140;
     --accent:#ffb37a; --accent2:#ff8fb3;
@@ -191,6 +194,7 @@
     <div id="hud">
       <div class="chip">出口 <b id="hudRound">0</b> / 8</div>
       <div class="chip">ミス <b id="hudMiss">0</b></div>
+      <div class="chip" id="hudTime" hidden>のこり <b id="hudTimeV">0</b></div>
       <button id="quitBtn">タイトルへ</button>
     </div>
     <div id="canvasWrap">
@@ -220,6 +224,12 @@
 (function(){
   "use strict";
   const $ = id => document.getElementById(id);
+  /* ミニ版(mini-medley 用)。?mini=1&sec=<秒>&mute=<0|1>。仕様は mini-medley/CLAUDE.md */
+  const Q = new URLSearchParams(location.search);
+  const MINI = Q.get("mini") === "1";
+  const MINI_SEC = Math.max(5, parseFloat(Q.get("sec")) || 20);
+  const MINI_TARGET = 8;                 // 出口8に着いた分(正解数−ミス数)で100点
+  let miniCorrect = 0, miniDone = false, miniTimer = null;
 
   /* =========================================================
      1. Sfx — 効果音 + BGM(先読みスケジューラ)。mochi-jump から移植し、
@@ -228,8 +238,8 @@
   const Sfx = (function(){
     let ac = null, master = null;
     const MUTE_KEY = "mochi-exit:muted";
-    let muted = false;
-    try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e) {}
+    let muted = MINI ? Q.get("mute") === "1" : false;
+    if(!MINI) try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e) {}
     function ensure(){
       if(!ac){
         const AC = window.AudioContext || window.webkitAudioContext; ac = new AC();
@@ -239,7 +249,7 @@
     }
     function setMuted(on){
       muted = !!on;
-      try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e) {}
+      if(!MINI) try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e) {}
       if(master) master.gain.value = muted ? 0 : 1;
     }
     function isMuted(){ return muted; }
@@ -1148,8 +1158,8 @@
     const hadAnomaly = !!anomaly;
     const correct = hadAnomaly ? dir === "back" : dir === "go";
     if(correct){
-      round++; Sfx.good();
-      if(hadAnomaly && Found.add(currentTheme.id, anomaly.id)){ runNewFinds++; foundCache = countFound(currentTheme); }
+      round++; Sfx.good(); miniCorrect++;
+      if(hadAnomaly && !MINI && Found.add(currentTheme.id, anomaly.id)){ runNewFinds++; foundCache = countFound(currentTheme); }
       setMsg("正解", "good");
     } else {
       miss++; Sfx.bad();
@@ -1170,7 +1180,7 @@
     const prev = scene;
     prepare();                       // ここで scene が次の通路になる(walking 中なので描画はしない)
     const next = scene;
-    const t0 = performance.now(), DUR = 1400;
+    const t0 = performance.now(), DUR = MINI ? 700 : 1400;
     let stepAt = 0;
     const ease = u => u < .5 ? 4*u*u*u : 1 - Math.pow(-2*u+2, 3)/2;   // ゆっくり出てゆっくり止まる
     function drawSegment(sc, cam, x0){
@@ -1241,6 +1251,44 @@
     });
   }
   function openZukan(i){ if(typeof i === "number") zukanTheme = i; paintZukan(); show("zukan"); }
+  /* ===== ミニ版(mini-medley から呼ばれる) =====
+     読み込み → 待機(いつもの通路を表示) → hub の mini-go で開始 → sec 秒かクリアで mini-result を返す。
+     PlayCounts・自己ベスト・発見記録は書かない。 */
+  function miniBoot(){
+    currentTheme = THEMES[Math.floor(Math.random() * THEMES.length)];
+    round = 0; miss = 0; usedIds = new Set(); foundUnlocked = false; foundCache = 0;
+    phase = "standby";
+    show("play"); fitCanvas();
+    scene = buildScene(0); anomaly = null; camX = 0; renderScene(scene, 0, performance.now());
+    $("choiceRow").style.visibility = "hidden";
+    $("hudTime").hidden = false; $("hudTimeV").textContent = Math.ceil(MINI_SEC);
+    paintHud();
+    window.addEventListener("message", function(e){ if(e.source === window.parent && e.data && e.data.type === "mini-go") miniGo(); });
+    window.parent.postMessage({ type: "mini-ready", game: "mochi-exit" }, "*");
+    if(window.parent === window) setTimeout(miniGo, 300);       // 単独で ?mini=1 を開いたとき(デバッグ用)は自動で始める
+  }
+  function miniGo(){
+    if(phase !== "standby") return;
+    const endAt = performance.now() + MINI_SEC * 1000;
+    startedAt = performance.now();
+    $("choiceRow").style.visibility = "";
+    Sfx.ensure(); Sfx.startBgm();
+    startIntro();
+    setTimeout(function(){ if(phase === "intro") leaveIntro(); }, 2200);   // 覚える時間も制限時間の中
+    miniTimer = setInterval(function(){
+      const left = Math.max(0, (endAt - performance.now()) / 1000);
+      $("hudTimeV").textContent = Math.ceil(left);
+      if(left <= 0) endMini("time");
+    }, 100);
+  }
+  function endMini(reason){
+    if(miniDone) return; miniDone = true;
+    clearInterval(miniTimer); phase = "ended";
+    Sfx.stopBgm(); if(rafId) cancelAnimationFrame(rafId); rafId = null;
+    const score = Math.max(0, Math.min(100, Math.round((miniCorrect - miss) / MINI_TARGET * 100)));
+    window.parent.postMessage({ type: "mini-result", game: "mochi-exit", score: score,
+      detail: { correct: miniCorrect, miss: miss, round: round, theme: currentTheme.id, reason: reason } }, "*");
+  }
   function startGame(themeIdx){
     Sfx.ensure(); Sfx.startBgm();
     PlayCounts.increment("mochi-exit");
@@ -1265,6 +1313,7 @@
     ].join("\n");
   }
   function finish(){
+    if(MINI){ endMini("clear"); return; }
     phase = "ended"; Sfx.stopBgm(); Sfx.clear();
     if(rafId) cancelAnimationFrame(rafId); rafId = null;
     const ms = performance.now() - startedAt;
@@ -1327,14 +1376,15 @@
   });
   $("toTitleBtn").addEventListener("click", quit);
   $("quitBtn").addEventListener("click", quit);
-  document.addEventListener("visibilitychange", function(){ if(document.hidden) Sfx.stopBgm(); else if($("play").classList.contains("active") && phase !== "ended") Sfx.startBgm(); });
+  document.addEventListener("visibilitychange", function(){ if(document.hidden) Sfx.stopBgm(); else if($("play").classList.contains("active") && phase !== "ended" && phase !== "standby") Sfx.startBgm(); });
   window.addEventListener("pagehide", function(){ Sfx.stopBgm(); });
 
   function paintMute(){ const on = Sfx.isMuted(); $("muteBtn").textContent = on ? "🔇" : "🔊"; $("muteBtn").classList.toggle("off", on); $("muteBtn").setAttribute("aria-pressed", on ? "true" : "false"); }
   $("muteBtn").addEventListener("click", function(e){ e.preventDefault(); Sfx.setMuted(!Sfx.isMuted()); paintMute(); });
   paintMute();
   fitCanvas(); paintBest();
-  PlayCounts.fetchCount("mochi-exit").then(function(c){ if(c != null) $("playCountLabel").textContent = "これまでに " + c.toLocaleString() + " 回プレイされています"; });
+  if(MINI) miniBoot();
+  if(!MINI) PlayCounts.fetchCount("mochi-exit").then(function(c){ if(c != null) $("playCountLabel").textContent = "これまでに " + c.toLocaleString() + " 回プレイされています"; });
 
   /* テスト用フック */
   window.__exit = {
@@ -1346,6 +1396,7 @@
     foundCount(){ return countFound(currentTheme); }, setFoundUnlocked(v){ foundUnlocked = !!v; },
     isMuted(){ return Sfx.isMuted(); },
     openZukan, shareText(){ return lastShare; },
+    mini: MINI,
     skipIntro(){ if(phase !== "intro") return; showIntroControls(false); setMsg(""); newScene(); phase = "idle"; setChoices(true); },
     get anomalies(){ return currentTheme.anomalies.map(a => ({ id:a.id, level:a.level, desc:a.desc })); },
     renderOnly(id, r){ const s = buildScene(r == null ? round : r); if(id) currentTheme.byId[id].apply(s); renderScene(s, 0, 1000); return canvas.toDataURL(); },

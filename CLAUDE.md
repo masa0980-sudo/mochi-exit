@@ -126,6 +126,22 @@ Canvas 2D、ビルド無し、依存なし、GitHub Pages**。ツールを足さ
   `#stage` は `100dvh`、ボタンは `pointerdown` で即反応 —
   Uniko の CLAUDE.md / メモリ `mobile-game-layout-touch` の4原則そのまま。
 
+## ミニ版（`?mini=1`・mini-medley から呼ばれる）
+
+`C:\claude\repos\mini-medley` のハブが iframe で `?mini=1&sec=20&mute=0|1` を付けて呼ぶ。**プロトコルの仕様は
+mini-medley の CLAUDE.md**（ここには mochi-exit 側の実装だけを書く）。`mini=1` が無ければ今までと完全に同じ動き。
+
+- `<head>` の1行スクリプトが `<html class="mini">` を描画前に付け、CSS でタイトル・ミュート・やめる・覚えたボタンを消す
+  （タイトルが一瞬見えるのを防ぐため。`show()` の `.active` 切替だけでは間に合わない）。
+- 流れ: `miniBoot()`（通りをランダム抽選・いつもの通路を描いて待機・`mini-ready`）→ ハブの `mini-go` で `miniGo()`
+  （BGM開始・いつもの通路を2.2秒見せて自動で歩き出す・残り時間タイマー）→ 時間切れか出口8クリアで `endMini()` が
+  `mini-result` を返す。歩行演出は半分（0.7秒）にしてある。覚える時間も制限時間の中。
+- 点数: `(正解数 − ミス数) / 8 × 100`（0〜100に丸め）。**ミスで出口は0に戻るが正解数は累計**なので、ミスは1つ減点に
+  なる。無ミスで8連続正解すると早く終わって100点。遅い人は時間切れで途中の点になる。
+- ミニ版では**書かないもの**: `PlayCounts`、`Best`、`Found`（発見記録）、`mochi-exit:muted`。音量はハブの `mute=` に従う
+  （`Sfx` の `muted` 初期値がミニ版だけ URL 由来）。脱出後の「未発見優先」も無効（`foundUnlocked=false`）。
+- 検証: 単独で `?mini=1&sec=5` を開くと自動で始まる（`window.parent === window` のとき300ms後に `miniGo()`）。
+
 ## `window.__exit` — テストフック
 
 `setTheme(i)`（`0..themeCount-1`。`anomalies`・`renderOnly` は現在テーマのものになる）/ `themeId()` /
