@@ -229,6 +229,7 @@
   const MINI = Q.get("mini") === "1";
   const MINI_SEC = Math.max(5, parseFloat(Q.get("sec")) || 20);
   const MINI_TARGET = 8;                 // 出口8に着いた分(正解数−ミス数)で100点
+  const MINI_INTRO_MS = 5000;            // 「いつもの通路」を覚える時間(制限時間の中)。2.2秒では短すぎて遊べなかった
   let miniCorrect = 0, miniDone = false, miniTimer = null;
 
   /* =========================================================
@@ -613,7 +614,11 @@
      round が進むほど微妙な異変(level 3)が混ざる。 */
   const ANOMALY_RATE = 0.6;
   let usedIds = new Set();
-  function allowedLevels(round){ return round < 3 ? [1] : round < 6 ? [1,2] : [1,2,3]; }
+  /* ミニ版は短時間で遊ぶので、見分けにくい level 3 は出さない(覚える時間が短い・やり直しが効かないため) */
+  function allowedLevels(round){
+    if(MINI) return round < 3 ? [1] : [1,2];
+    return round < 3 ? [1] : round < 6 ? [1,2] : [1,2,3];
+  }
   function pickAnomaly(round, rng){
     rng = rng || Math.random;
     if(rng() >= ANOMALY_RATE) return null;
@@ -1274,7 +1279,13 @@
     $("choiceRow").style.visibility = "";
     Sfx.ensure(); Sfx.startBgm();
     startIntro();
-    setTimeout(function(){ if(phase === "intro") leaveIntro(); }, 2200);   // 覚える時間も制限時間の中
+    const introEnd = performance.now() + MINI_INTRO_MS;               // 覚える時間も制限時間の中。残り秒数を見せる
+    const introTick = setInterval(function(){
+      if(phase !== "intro"){ clearInterval(introTick); return; }
+      const n = Math.max(1, Math.ceil((introEnd - performance.now()) / 1000));
+      $("msg").textContent = "これが「いつもの通路」。よく覚えて！（あと " + n + " 秒）";
+    }, 150);
+    setTimeout(function(){ if(phase === "intro") leaveIntro(); }, MINI_INTRO_MS);
     miniTimer = setInterval(function(){
       const left = Math.max(0, (endAt - performance.now()) / 1000);
       $("hudTimeV").textContent = Math.ceil(left);
